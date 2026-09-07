@@ -1,0 +1,71 @@
+import { TRACEID_VRAM_VB } from "../../core/constants.js";
+import { BUFFER_STATIC } from "./constants.js";
+let id = 0;
+class VertexBuffer {
+	usage = BUFFER_STATIC;
+	_vaoKeyPart = null;
+	constructor(graphicsDevice, format, numVertices, options) {
+		this.usage = options?.usage ?? BUFFER_STATIC;
+		this.device = graphicsDevice;
+		this.format = format;
+		this.numVertices = numVertices;
+		this.id = id++;
+		this.impl = graphicsDevice.createVertexBufferImpl(this, format, options);
+		this.numBytes = format.verticesByteSize ? format.verticesByteSize : format.size * numVertices;
+		this.adjustVramSizeTracking(graphicsDevice._vram, this.numBytes);
+		const initialData = options?.data;
+		if (initialData) {
+			this.setData(initialData);
+		} else {
+			this.storage = new ArrayBuffer(this.numBytes);
+		}
+		this.device.buffers.add(this);
+	}
+	get vaoKeyPart() {
+		this._vaoKeyPart ?? (this._vaoKeyPart = `${this.id}_${this.format.renderingHash}_`);
+		return this._vaoKeyPart;
+	}
+	destroy() {
+		const device = this.device;
+		device.buffers.delete(this);
+		if (this.impl.initialized) {
+			this.impl.destroy(device);
+			this.adjustVramSizeTracking(device._vram, -this.storage.byteLength);
+		}
+	}
+	adjustVramSizeTracking(vram, size) {
+		vram.vb += size;
+	}
+	loseContext() {
+		this.impl.loseContext();
+	}
+	restoreContext() {
+		this.unlock();
+	}
+	getFormat() {
+		return this.format;
+	}
+	getUsage() {
+		return this.usage;
+	}
+	getNumVertices() {
+		return this.numVertices;
+	}
+	lock() {
+		return this.storage;
+	}
+	unlock() {
+		this.impl.unlock(this);
+	}
+	setData(data) {
+		if (data.byteLength !== this.numBytes) {
+			return false;
+		}
+		this.storage = data;
+		this.unlock();
+		return true;
+	}
+}
+export {
+	VertexBuffer
+};

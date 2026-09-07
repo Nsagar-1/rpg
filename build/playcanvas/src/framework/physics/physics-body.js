@@ -1,0 +1,48 @@
+class PhysicsBody {
+	entity = null;
+	nativeBody = null;
+	setFriction(friction) {
+	}
+	setRollingFriction(friction) {
+	}
+	setRestitution(restitution) {
+	}
+	setDamping(linear, angular) {
+	}
+	setLinearFactor(factor) {
+	}
+	setAngularFactor(factor) {
+	}
+	setLinearVelocity(velocity) {
+	}
+	getLinearVelocity(velocity) {
+	}
+	setAngularVelocity(velocity) {
+	}
+	getAngularVelocity(velocity) {
+	}
+	setMass(mass) {
+	}
+	isActive() {
+		return false;
+	}
+	activate() {
+	}
+	setTransform(position, rotation) {
+	}
+	getTransform(position, rotation) {
+	}
+	setKinematicTarget(position, rotation) {
+	}
+	applyForce(force, relativePoint) {
+	}
+	applyTorque(torque) {
+	}
+	applyImpulse(impulse, relativePoint) {
+	}
+	applyTorqueImpulse(torque) {
+	}
+}
+export {
+	PhysicsBody
+};

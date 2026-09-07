@@ -1,0 +1,47 @@
+import { DynamicBuffers } from "../dynamic-buffers.js";
+import { WebglDynamicBuffer } from "./webgl-dynamic-buffer.js";
+class WebglDynamicBuffers extends DynamicBuffers {
+	free = /* @__PURE__ */ new Map();
+	used = [];
+	constructor(device) {
+		super(device, 0, 0);
+	}
+	destroy() {
+		this.used.forEach((buffer) => buffer.destroy(this.device));
+		this.free.forEach((buffers) => buffers.forEach((buffer) => buffer.destroy(this.device)));
+		this.used = null;
+		this.free = null;
+	}
+	alloc(allocation, size) {
+		let buffer = this.free.get(size)?.pop();
+		if (!buffer) {
+			buffer = new WebglDynamicBuffer(this.device, size);
+		}
+		this.used.push(buffer);
+		allocation.gpuBuffer = buffer;
+		allocation.offset = 0;
+		allocation.storage = buffer.storage;
+	}
+	onFrameEnd() {
+		const used = this.used;
+		for (let i = 0; i < used.length; i++) {
+			const buffer = used[i];
+			let pool = this.free.get(buffer.size);
+			if (!pool) {
+				pool = [];
+				this.free.set(buffer.size, pool);
+			}
+			pool.push(buffer);
+		}
+		used.length = 0;
+	}
+	loseContext() {
+		this.onFrameEnd();
+		this.free.forEach((buffers) => {
+			buffers.forEach((buffer) => buffer.loseContext());
+		});
+	}
+}
+export {
+	WebglDynamicBuffers
+};

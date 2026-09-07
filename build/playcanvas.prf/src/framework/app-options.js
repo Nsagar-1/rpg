@@ -1,0 +1,21 @@
+class AppOptions {
+	elementInput;
+	keyboard;
+	mouse;
+	touch;
+	gamepads;
+	scriptPrefix;
+	assetPrefix;
+	scriptsOrder;
+	soundManager;
+	physicsWorld;
+	graphicsDevice;
+	lightmapper;
+	batchManager;
+	xr;
+	componentSystems = [];
+	resourceHandlers = [];
+}
+export {
+	AppOptions
+};

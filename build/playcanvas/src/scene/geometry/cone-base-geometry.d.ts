@@ -1,0 +1,13 @@
+/**
+ * Shared superclass of {@link CapsuleGeometry}, {@link ConeGeometry} and {@link CylinderGeometry}.
+ * Use those classes instead of this one.
+ */
+export class ConeBaseGeometry extends Geometry {
+    constructor(baseRadius: any, peakRadius: any, height: any, heightSegments: any, capSegments: any, roundedCaps: any);
+    positions: number[];
+    normals: number[];
+    uvs: number[];
+    uvs1: number[];
+    indices: any[];
+}
+import { Geometry } from './geometry.js';

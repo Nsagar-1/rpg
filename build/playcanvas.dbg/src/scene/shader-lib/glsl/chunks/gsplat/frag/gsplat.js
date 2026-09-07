@@ -1,0 +1,125 @@
+var gsplat_default = (
+  /* glsl */
+  `
+
+#ifndef DITHER_NONE
+    #include "bayerPS"
+    #include "opacityDitherPS"
+    varying float id;
+#endif
+
+#if defined(SHADOW_PASS) || defined(PICK_PASS) || defined(PREPASS_PASS)
+    uniform float alphaClip;
+#endif
+
+#ifdef PREPASS_PASS
+    varying float vLinearDepth;
+    #include "floatAsUintPS"
+#endif
+
+// the prepass declares this varying above, and the two passes are never generated as one
+#if defined(SCENE_TEXTURE_DEPTH) && !defined(PREPASS_PASS)
+    varying float vLinearDepth;
+#endif
+
+#include "sceneTexturesPS"
+
+#if !defined(SHADOW_PASS) && !defined(PICK_PASS) && !defined(PREPASS_PASS)
+    uniform float alphaClipForward;
+#endif
+
+varying mediump vec2 gaussianUV;
+varying mediump vec4 gaussianColor;
+
+#if defined(GSPLAT_UNIFIED_ID) && defined(PICK_PASS)
+    flat varying uint vPickId;
+#endif
+
+#ifdef PICK_PASS
+    #include "pickPS"
+#endif
+
+#ifdef SHADOW_PASS
+    #include "shadowCasterPS"
+#endif
+
+#ifdef GSPLAT_USER_VARYINGS
+    #include "gsplatUserVaryingsPS"
+#endif
+#include "gsplatModifyPS"
+
+const float EXP4 = exp(-4.0);
+const float INV_EXP4 = 1.0 / (1.0 - EXP4);
+
+float normExp(float x) {
+    return (exp(x * -4.0) - EXP4) * INV_EXP4;
+}
+
+void main(void) {
+    mediump float A = dot(gaussianUV, gaussianUV);
+    if (A > 1.0) {
+        discard;
+    }
+
+    mediump float alpha = normExp(A) * gaussianColor.a;
+
+    #if defined(SHADOW_PASS) || defined(PICK_PASS) || defined(PREPASS_PASS)
+        if (alpha < alphaClip) {
+            discard;
+        }
+    #endif
+
+    #ifdef PICK_PASS
+
+        #ifdef GSPLAT_UNIFIED_ID
+            // Use component ID from work buffer (passed via varying)
+            pcFragColor0 = encodePickOutput(vPickId);
+        #else
+            // Use standard meshInstanceId path
+            pcFragColor0 = getPickOutput();
+        #endif
+        #ifdef DEPTH_PICK_PASS
+            pcFragColor1 = getPickDepth();
+        #endif
+
+    #elif SHADOW_PASS
+
+        // output data for the shadow type being rendered
+        gl_FragColor = getShadowOutput();
+
+    #elif PREPASS_PASS
+
+        gl_FragColor = float2vec4(vLinearDepth);
+
+    #else
+        if (alpha < alphaClipForward) {
+            discard;
+        }
+
+        #ifndef DITHER_NONE
+            opacityDither(alpha, id * 0.013);
+        #endif
+
+        vec4 fragColor = vec4(gaussianColor.xyz, alpha);
+        modifySplatColor(gaussianUV, fragColor);
+        gl_FragColor = vec4(fragColor.xyz * fragColor.a, fragColor.a);
+
+        // The same premultiplied blending which composites the color accumulates the scene depth, so
+        // the splats gain a depth without being rendered a second time. Dithered splats render as
+        // opaque, and the fragments which survive the dither have full coverage.
+        // Guarded by the define the write function tests internally, as vLinearDepth is only generated
+        // when the depth is written.
+        #ifdef SCENE_TEXTURE_DEPTH
+            #ifdef DITHER_NONE
+                writeSceneTextureDepth(vLinearDepth, fragColor.a);
+            #else
+                writeSceneTextureDepth(vLinearDepth, 1.0);
+            #endif
+        #endif
+    #endif
+}
+`
+);
+export {
+  gsplat_default as default
+};
