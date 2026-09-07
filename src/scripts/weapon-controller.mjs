@@ -75,6 +75,9 @@ export class WeaponController extends Script {
     /** @type {number} */
     _equipTimer = 0;
 
+    /** @type {number} */
+    _meleeCooldown = 0;
+
     /** @type {boolean} */
     _reloading = false;
 
@@ -125,6 +128,13 @@ export class WeaponController extends Script {
      */
     get reloading() {
         return this._reloading;
+    }
+
+    /**
+     * @returns {boolean} True while a freshly selected weapon is still being brought up.
+     */
+    get equipping() {
+        return this._equipTimer > 0;
     }
 
     /**
@@ -623,6 +633,7 @@ export class WeaponController extends Script {
     update(dt) {
         this._cooldown = Math.max(0, this._cooldown - dt);
         this._equipTimer = Math.max(0, this._equipTimer - dt);
+        this._meleeCooldown = Math.max(0, this._meleeCooldown - dt);
 
         if (this._reloading) {
             this._reloadTimer -= dt;
@@ -654,11 +665,16 @@ export class WeaponController extends Script {
             const wantFire = this.input.fire ||
                 (this.input.autoFire && this._enemyUnderCrosshair());
 
+            const pressed = tapped || (wantFire && !this._firePrev);
             if (def) {
-                const pressed = tapped || (wantFire && !this._firePrev);
                 if (def.auto ? (wantFire || tapped) : pressed) {
                     this.tryFire();
                 }
+            } else if (pressed && this._meleeCooldown <= 0) {
+                // Bare hands: the trigger throws a punch instead of a bullet.
+                this._meleeCooldown = 0.6;
+                sfx.empty();
+                this.app.fire('player:melee');
             }
             this._firePrev = wantFire;
         }

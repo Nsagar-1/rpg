@@ -318,6 +318,7 @@ export function createPickupSystem({ app, player, input, getWeapon: weaponAccess
             const message = collect(nearest);
             if (message) {
                 app.fire('feed:message', message);
+                app.fire('pickup:taken', nearest.kind, nearest.label);
                 nearest.taken = true;
                 nearest.timer = nearest.respawn;
                 nearest.entity.enabled = false;

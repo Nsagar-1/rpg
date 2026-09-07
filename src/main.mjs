@@ -43,7 +43,7 @@ import { HitBox } from './scripts/hit-box.mjs';
 import { PlayerController } from './scripts/player-controller.mjs';
 import { WeaponController } from './scripts/weapon-controller.mjs';
 import { resolvePlayerAssetUrl } from './character-assets.mjs';
-import { XBOT_HOST_URL, XBOT_LOCO_URLS } from './mixamo-catalog.mjs';
+import { XBOT_CLIP_URLS, XBOT_HOST_URL } from './mixamo-catalog.mjs';
 import { createGunAssets } from './weapons/gun-assets.mjs';
 import { loadFactoryMap } from './map/factory-map.mjs';
 
@@ -138,14 +138,20 @@ console.info('[Battleground] Player model:', playerModelUrl);
 /** @type {Record<string, object>} */
 const extraTracks = {};
 if (playerModelUrl === XBOT_HOST_URL) {
-    await Promise.all(Object.entries(XBOT_LOCO_URLS).map(async ([key, url]) => {
-        const clipAsset = await loadContainer(url, `player-loco-${key}`);
-        const track = clipAsset.resource?.animations?.[0]?.resource;
-        if (track) {
-            extraTracks[key] = track;
+    await Promise.all(Object.entries(XBOT_CLIP_URLS).map(async ([key, url]) => {
+        // One missing clip must not take the whole rig down — the state machine already falls
+        // back to the nearest key it did get.
+        try {
+            const clipAsset = await loadContainer(url, `player-clip-${key}`);
+            const track = clipAsset.resource?.animations?.[0]?.resource;
+            if (track) {
+                extraTracks[key] = track;
+            }
+        } catch (err) {
+            console.warn(`[Battleground] Missing player clip "${key}" (${url})`, err);
         }
     }));
-    console.info('[Battleground] X Bot locomotion:', Object.keys(extraTracks).join(', ') || 'none');
+    console.info('[Battleground] X Bot clips:', Object.keys(extraTracks).join(', ') || 'none');
 }
 
 const factoryMap = await loadFactoryMap(app);
@@ -219,7 +225,8 @@ function addPrim(name, parent, material, pos, scale, type = 'box') {
  *
  * @param {Entity} playerEntity - Physics root.
  * @param {Asset|null} soldierAsset - Loaded soldier container asset.
- * @returns {{ visual: Entity, gunAnchor: Entity, pose?: (dt: number, state: any) => void }} Visual, weapon hand, per-frame poser.
+ * @returns {{ visual: Entity, gunAnchor: Entity, pose?: (dt: number, state: any) => void, playAction?: (name: string) => void }}
+ * Visual, weapon hand, per-frame poser and the one-shot action trigger.
  */
 function createPlayerAvatar(playerEntity, soldierAsset) {
     const rig = createSoldierRig(app, playerEntity, soldierAsset ?? null, extraTracks);
@@ -342,7 +349,7 @@ ammoBody?.setCcdSweptSphereRadius?.(0.5);
 player.addComponent('script');
 app.root.addChild(cameraEntity);
 
-const { visual: playerVisual, gunAnchor, pose: poseRig } = createPlayerAvatar(player, soldierAsset);
+const { visual: playerVisual, gunAnchor, pose: poseRig, playAction } = createPlayerAvatar(player, soldierAsset);
 
 // `skinned` marks the GLB rig so the camera controller leaves its wrapper to the poser.
 playerVisual.skinned = !!poseRig;
@@ -551,7 +558,7 @@ playerScript.respawn();
 // Everyone starts with a sidearm; the good guns are on the ground.
 weaponScript.pickUp('pistol');
 
-// Drive the procedural locomotion rig from the same state the camera reads.
+// Drive the locomotion rig from the same state the camera reads.
 if (poseRig) {
     app.on('update', (/** @type {number} */ dt) => {
         const velocity = player.rigidbody?.linearVelocity;
@@ -560,14 +567,29 @@ if (poseRig) {
             speed,
             vx: velocity?.x ?? 0,
             vz: velocity?.z ?? 0,
+            vy: velocity?.y ?? 0,
             lookYaw: playerScript.yaw,
-            crouch: !!input.crouch && !input.prone,
+            lookPitch: playerScript.pitch,
+            crouch: !!input.crouch && !input.prone && !input.sit,
             prone: !!input.prone,
+            sit: !!input.sit && !input.prone,
             aimAmount: weaponScript.aiming ? 1 : 0,
             grounded: playerScript.grounded,
-            unarmed: !weaponScript.active
+            unarmed: !weaponScript.active,
+            reloading: weaponScript.reloading,
+            equipping: weaponScript.equipping,
+            dead: playerScript.dead,
+            weaponKind: weaponScript.active?.def.kind
         });
     });
+}
+
+// One-shot body actions the state machine cannot infer from movement alone.
+if (playAction) {
+    app.on('weapon:fired', () => playAction('fire'));
+    app.on('player:melee', () => playAction('melee'));
+    app.on('player:hurt', () => playAction('hit'));
+    app.on('pickup:taken', () => playAction('pickUp'));
 }
 
 // Clicking back into the canvas re-captures the mouse after Esc.

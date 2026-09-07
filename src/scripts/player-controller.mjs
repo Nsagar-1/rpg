@@ -381,13 +381,21 @@ export class PlayerController extends Script {
             this._jumping = false;
         }
 
-        if (this.input.takeJump() && this._grounded && !this._jumping && !this.input.crouch && !this.input.prone) {
+        if (this.input.takeJump() && this._grounded && !this._jumping && !this.input.crouch && !this.input.prone && !this.input.sit) {
             this._jumping = true;
             this._rigidbody.applyImpulse(0, this.jumpForce, 0);
         }
 
+        // Standing up is the only way out of a sit, so any move input cancels the stance rather
+        // than sliding a seated body across the floor.
+        if (this.input.sit && (this.input.moveX !== 0 || this.input.moveY !== 0)) {
+            this.input.sit = false;
+        }
+
         let speed = this._grounded ? this.speedGround : this.speedAir;
-        if (this.input.prone) {
+        if (this.input.sit) {
+            speed = 0;
+        } else if (this.input.prone) {
             speed *= 0.28;
         } else if (this.input.crouch) {
             speed *= this.crouchMult;

@@ -177,14 +177,14 @@ function wrapDeg(a) {
 
 /**
  * Adds the soldier model to the player and returns a rig that poses its skeleton every frame.
- * The GLB ships only an idle clip, so all locomotion (walk / run / crouch / aim / airborne) is
- * driven procedurally from movement state — no animation assets needed.
+ * Clips drive stance and locomotion on the base layer with weapon actions overlaid on a masked
+ * upper-body layer; a fully procedural fallback runs when the model ships no usable clips.
  *
  * @param {AppBase} app - Running application (unused today, kept for symmetry with other loaders).
  * @param {Entity} playerEntity - Physics root the visual attaches to.
  * @param {Asset|null} asset - Loaded 'container' asset for the body mesh, null when unavailable.
- * @param {Record<string, object>} [extraTracks] - Extra AnimTracks keyed by locomotion state.
- * @returns {{ visual: Entity, gunAnchor: Entity, pose: (dt: number, state: RigState) => void } | null}
+ * @param {Record<string, object>} [extraTracks] - Extra AnimTracks keyed by clip state.
+ * @returns {{ visual: Entity, gunAnchor: Entity, pose: (dt: number, state: RigState) => void, playAction: (name: string) => void } | null}
  *   The rig, or null when the model could not be instantiated (caller falls back to primitives).
  */
 export function createSoldierRig(app, playerEntity, asset, extraTracks = {}) {
@@ -486,8 +486,8 @@ export function createSoldierRig(app, playerEntity, asset, extraTracks = {}) {
                     upperLayer.activeStateCurrentTime = 0;
                 }
                 const targetWeight = wantUpper ? 1 : 0;
-                upperLayer.weight += (targetWeight - upperLayer.weight) *
-                    Math.min(1, dt / UPPER_FADE);
+                const step = Math.min(1, dt / UPPER_FADE);
+                upperLayer.weight += (targetWeight - upperLayer.weight) * step;
             }
 
             // --- Facing. In combat the body holds the camera heading so the gun points where
@@ -528,9 +528,8 @@ export function createSoldierRig(app, playerEntity, asset, extraTracks = {}) {
             if (state.dead) {
                 next = firstClip('death', 'dive') ?? next;
             } else if (urgent) {
-                next = (state.vy ?? 0) > 0.5
-                    ? (firstClip('jump', 'fall') ?? next)
-                    : (firstClip('fall', 'jump') ?? next);
+                const rising = (state.vy ?? 0) > 0.5;
+                next = (rising ? firstClip('jump', 'fall') : firstClip('fall', 'jump')) ?? next;
             } else if (state.sit) {
                 next = firstClip('sit', 'crouchIdle') ?? next;
             } else if (state.prone) {
