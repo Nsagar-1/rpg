@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Battleground — Training Range</title>
+    <style>
+        :root {
+            --safe-b: env(safe-area-inset-bottom, 0px);
+            --safe-l: env(safe-area-inset-left, 0px);
+            --safe-r: env(safe-area-inset-right, 0px);
+            --accent: #4ec3ff;
+            --danger: #ff5a4a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            width: 100%; height: 100%; overflow: hidden; background: #0b0d12;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+            -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+            overscroll-behavior: none;
+        }
+
+        /* Stop iOS/Android from pinch-zooming or double-tap zooming during touch play. */
+        body.touch {
+            touch-action: none;
+            -webkit-touch-callout: none;
+        }
+
+        #application-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+        #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; z-index: 10; }
+
+        /* ---------- Crosshair + hitmarker ---------- */
+
+        #crosshair {
+            position: absolute; left: 50%; top: 50%; width: 18px; height: 18px;
+            margin: -9px 0 0 -9px; border: 2px solid rgba(255,255,255,0.92);
+            border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+            transition: opacity 0.15s;
+        }
+        #crosshair::after {
+            content: ''; position: absolute; left: 50%; top: 50%;
+            width: 4px; height: 4px; margin: -2px 0 0 -2px;
+            background: #fff; border-radius: 50%; box-shadow: 0 0 2px #000;
+        }
+        #crosshair i { display: none; }
+        #crosshair.hidden { opacity: 0; }
+        #crosshair.aiming { opacity: 0.8; transform: scale(0.85); }
+
+        #hitmarker {
+            position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+            margin: -13px 0 0 -13px; opacity: 0; transform: scale(0.7);
+        }
+        #hitmarker.show { opacity: 1; transform: scale(1); transition: transform 0.06s ease-out; }
+        #hitmarker::before, #hitmarker::after {
+            content: ''; position: absolute; left: 11px; top: 0; width: 3px; height: 26px;
+            background: #fff; box-shadow: 0 0 3px #000;
+        }
+        #hitmarker::before { transform: rotate(45deg); }
+        #hitmarker::after { transform: rotate(-45deg); }
+        #hitmarker.head::before, #hitmarker.head::after { background: #ffd34e; }
+        #hitmarker.kill::before, #hitmarker.kill::after { background: var(--danger); }
+
+        /* ---------- Free Fire-style chrome ---------- */
+
+        #ff-top-left {
+            position: absolute; top: calc(8px + env(safe-area-inset-top, 0px));
+            left: calc(10px + var(--safe-l)); display: flex; gap: 8px; align-items: flex-start;
+        }
+        #minimap-wrap { position: relative; width: 112px; height: 112px; }
+        #minimap-ping {
+            position: absolute; right: -4px; bottom: 4px; font-size: 10px; font-weight: 700;
+            text-shadow: 0 1px 3px #000; display: flex; align-items: center; gap: 2px;
+        }
+        #minimap {
+            width: 112px; height: 112px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35); background: #0c140e;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+        }
+        #hud-tools {
+            display: flex; flex-direction: column; gap: 6px; margin-top: 4px;
+        }
+        .hud-icon {
+            width: 28px; height: 28px; border-radius: 50%; pointer-events: auto; cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.3); background: rgba(10,13,20,0.7);
+            color: #fff; font-size: 13px; display: grid; place-items: center;
+        }
+        .hud-icon.off { opacity: 0.4; }
+        #squad {
+            display: flex; flex-direction: column; gap: 4px; min-width: 120px;
+        }
+        .squad-row {
+            display: flex; align-items: center; gap: 6px; font-size: 11px;
+            text-shadow: 0 1px 3px #000;
+        }
+        .squad-num {
+            width: 16px; height: 16px; border-radius: 50%; background: #2f6b4a;
+            display: grid; place-items: center; font-size: 9px; font-weight: 800;
+        }
+        .squad-row span { flex: 1; }
+        .squad-hp { width: 52px; height: 4px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+        .squad-hp i { display: block; height: 100%; width: 100%; background: #4ade80; }
+
+        #match-bar {
+            position: absolute; top: calc(8px + env(safe-area-inset-top, 0px)); left: 50%;
+            transform: translateX(-50%); text-align: center; text-shadow: 0 2px 6px #000;
+        }
+        #match-score {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            font-size: 22px; font-weight: 800;
+        }
+        #match-score b { min-width: 28px; }
+        #match-score-a { color: #5ec8ff; }
+        #match-score-b { color: #ff9a3c; }
+        #match-timer { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; }
+        #match-objective { font-size: 11px; color: #cfd6e2; margin-top: 1px; }
+        #match-pips { display: flex; justify-content: center; gap: 4px; margin-top: 3px; }
+        #match-pips i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.28); }
+        #match-pips i.on { background: #5ec8ff; }
+
+        #ff-top-right {
+            position: absolute; top: calc(8px + env(safe-area-inset-top, 0px));
+            right: calc(12px + var(--safe-r)); display: flex; flex-direction: column;
+            align-items: flex-end; gap: 6px;
+        }
+        #gold {
+            display: flex; align-items: center; gap: 5px; font-weight: 800; font-size: 16px;
+            text-shadow: 0 2px 6px #000;
+        }
+        #gold::before { content: '🪙'; font-size: 14px; }
+
+        #kill-feed {
+            position: absolute; left: 50%; bottom: calc(52px + var(--safe-b));
+            transform: translateX(-50%); display: flex; flex-direction: column; gap: 3px;
+            align-items: center; font-size: 11px; max-width: 70vw; pointer-events: none;
+        }
+        .feed-line {
+            background: rgba(10,13,20,0.55); padding: 3px 10px; border-radius: 4px;
+            animation: feed-in 0.2s ease-out;
+        }
+        .feed-line.good { color: #ffe8b0; }
+        .feed-line.bad { color: #ffb3ab; }
+        @keyframes feed-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+
+        #health-block {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            bottom: calc(10px + var(--safe-b)); width: min(420px, 70vw); text-align: center;
+        }
+        #health-row { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin-bottom: 3px; }
+        #health-row b { font-size: 13px; font-weight: 800; text-shadow: 0 2px 6px #000; }
+        #health-row span { font-size: 11px; color: #d5dbe6; letter-spacing: 0.08em; }
+        #health-bar {
+            height: 8px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 2px; overflow: hidden;
+        }
+        #health-fill {
+            height: 100%; width: 100%; background: linear-gradient(90deg, #e8e8e8, #fff);
+            transition: width 0.2s;
+        }
+        #health-fill.low { background: linear-gradient(90deg, #ff4d4d, #ff8a3d); }
+        #skill-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 4px; }
+        .skill {
+            width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35);
+            background: rgba(10,13,20,0.55);
+        }
+
+        #weapon-block { display: none; }
+        #weapon-slots {
+            display: flex; flex-direction: column; gap: 5px; pointer-events: auto; align-items: flex-end;
+        }
+        .slot {
+            display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 108px;
+            background: rgba(10,13,20,0.62); border: 1px solid rgba(255,255,255,0.18); color: #cbd2e0;
+            border-radius: 4px; padding: 5px 8px 5px 10px; font: inherit; font-size: 10px; cursor: pointer;
+            text-align: right;
+        }
+        .slot.active { border-color: #f0d38a; background: rgba(40,36,22,0.75); color: #fff; }
+        .slot b { font-size: 11px; }
+        .slot span { font-size: 12px; font-weight: 700; }
+        .slot em { font-size: 9px; color: #ffcc57; font-style: normal; text-transform: uppercase; }
+        .slot-fist { font-style: normal; font-size: 16px; }
+
+        /* ---------- Pickup prompt ---------- */
+
+        #pickup-prompt {
+            position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+            display: none; align-items: center; gap: 10px; pointer-events: auto; cursor: pointer;
+            background: rgba(10,13,20,0.72); border: 1px solid rgba(78,195,255,0.5);
+            border-radius: 10px; padding: 9px 15px; box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+        }
+        #pickup-prompt.show { display: flex; animation: feed-in 0.15s ease-out; }
+        #pickup-key {
+            background: rgba(78,195,255,0.22); border: 1px solid rgba(78,195,255,0.6);
+            border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 700; color: var(--accent);
+        }
+        #pickup-label { font-size: 14px; font-weight: 600; }
+
+        /* ---------- Overlays ---------- */
+
+        #damage-layer, #nameplate-layer { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 11; }
+
+        .damage-number {
+            position: absolute; font-weight: 800; font-size: 20px; color: #ffe8b0;
+            text-shadow: 0 0 6px #000, 0 2px 0 #000; transform: translate(-50%, -50%);
+            animation: float-up 0.78s ease-out forwards;
+        }
+        .damage-number.head { color: #ffd34e; font-size: 26px; }
+        @keyframes float-up {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -130%) scale(1.15); }
+        }
+
+        .nameplate {
+            position: absolute; transform: translate(-50%, -100%); transform-origin: 50% 100%;
+            text-align: center; width: 78px;
+        }
+        .np-name { font-size: 10px; text-shadow: 0 1px 3px #000; letter-spacing: 0.04em; }
+        .np-bar {
+            height: 4px; margin-top: 2px; background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(0,0,0,0.7); border-radius: 3px; overflow: hidden;
+        }
+        .np-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff5a4a, #ffa23d); }
+
+        #hurt-overlay {
+            position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 12;
+            background: radial-gradient(ellipse at center, transparent 42%, rgba(190,20,20,0.75) 100%);
+        }
+        #hurt-overlay.flash { animation: hurt 0.45s ease-out; }
+        @keyframes hurt { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+        #scope-overlay { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 12; }
+        #scope-overlay.show { display: block; }
+        #scope-overlay::before {
+            content: ''; position: absolute; inset: 0; background: #000;
+            -webkit-mask: radial-gradient(circle at 50% 50%, transparent 0 32vmin, #000 32vmin);
+            mask: radial-gradient(circle at 50% 50%, transparent 0 32vmin, #000 32vmin);
+        }
+        #scope-lines { position: absolute; inset: 0; }
+        #scope-lines::before, #scope-lines::after {
+            content: ''; position: absolute; background: rgba(0,0,0,0.85);
+        }
+        #scope-lines::before { left: 0; right: 0; top: 50%; height: 1px; }
+        #scope-lines::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+
+        #death-screen {
+            position: fixed; inset: 0; z-index: 30; display: none; place-items: center;
+            background: rgba(60,6,6,0.55); backdrop-filter: blur(3px); color: #fff; text-align: center;
+        }
+        #death-screen.show { display: grid; }
+        #death-screen h2 { font-size: 34px; letter-spacing: 0.16em; margin-bottom: 8px; }
+        #death-screen p { color: #ffb3ab; font-size: 14px; }
+        #death-timer { font-size: 44px; font-weight: 800; margin-top: 14px; }
+
+        /* ---------- Start screen ---------- */
+
+        #start-screen {
+            position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+            background: radial-gradient(circle at 50% 40%, #1b2434, #080a0f);
+            color: #fff; text-align: center; padding: 24px; cursor: pointer;
+        }
+        #start-screen.hidden { display: none; }
+        #start-screen h1 { font-size: 30px; letter-spacing: 0.22em; margin-bottom: 6px; }
+        #start-screen .sub { color: #8b93a5; font-size: 13px; letter-spacing: 0.1em; margin-bottom: 26px; }
+        #start-btn {
+            background: var(--accent); color: #06121b; border: none; border-radius: 10px;
+            padding: 14px 40px; font: inherit; font-size: 16px; font-weight: 800; letter-spacing: 0.1em;
+            cursor: pointer;
+        }
+        #start-keys {
+            margin-top: 24px; font-size: 12px; color: #79839a; line-height: 1.9;
+            display: grid; grid-template-columns: auto auto; gap: 2px 14px; text-align: left;
+        }
+        #start-keys b { color: #cbd2e0; font-weight: 600; }
+        #start-options { margin-top: 20px; font-size: 12px; color: #9aa3b5; }
+        #start-options label { cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+        #start-layout-hint { margin-top: 10px; font-size: 11px; color: #79839a; display: none; }
+        body.touch #start-layout-hint { display: block; }
+
+        /* ---------- Touch controls ---------- */
+
+        #touch-ui { position: fixed; inset: 0; z-index: 20; display: none; touch-action: none; }
+        #touch-ui.active { display: block; }
+
+        .touch-zone { position: absolute; pointer-events: auto; touch-action: none; }
+        #touch-move { /* position comes from saved touch layout */ }
+
+        #joystick {
+            position: fixed; width: 132px; height: 132px; margin: -66px 0 0 -66px;
+            border-radius: 50%; border: 2px solid rgba(255,255,255,0.28);
+            background: rgba(255,255,255,0.07); opacity: 0; pointer-events: none;
+            transition: opacity 0.12s;
+        }
+        #touch-ui.active #joystick { opacity: 0.45; }
+        #touch-ui.active #joystick.active { opacity: 0.95; }
+        #joystick-knob {
+            position: absolute; left: 50%; top: 50%; width: 56px; height: 56px;
+            margin: -28px 0 0 -28px; border-radius: 50%;
+            background: rgba(255,255,255,0.35); border: 2px solid rgba(255,255,255,0.6);
+        }
+
+        .tbtn {
+            position: absolute; pointer-events: auto; touch-action: none;
+            display: grid; place-items: center; border-radius: 50%;
+            background: rgba(14,18,26,0.42); border: 2px solid rgba(255,255,255,0.3);
+            color: #fff; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+            backdrop-filter: blur(3px); cursor: pointer;
+            -webkit-touch-callout: none;
+        }
+        .tbtn-fire { touch-action: none; }
+        .tbtn svg {
+            width: 46%; height: 46%; fill: none; stroke: #fff; stroke-width: 2;
+            stroke-linecap: round; stroke-linejoin: round;
+        }
+        .tbtn.down { background: rgba(78,195,255,0.45); border-color: #fff; transform: scale(0.94); }
+        .tbtn.on { background: rgba(78,195,255,0.3); border-color: var(--accent); }
+        .tbtn-fire { background: rgba(255,90,74,0.3); border-color: rgba(255,140,120,0.65); }
+        .tbtn-fire svg { width: 54%; height: 54%; stroke-width: 2.4; }
+        .tbtn-auto { font-size: 9px; }
+
+        .tbtn-scout { font-size: 8px; letter-spacing: 0.04em; flex-direction: column; gap: 1px; }
+        .tbtn-scout svg { width: 38%; height: 38%; }
+        .tbtn-aim { flex-direction: column; gap: 0; font-size: 9px; }
+        .tbtn-aim small { font-size: 9px; font-weight: 800; letter-spacing: 0.04em; }
+        .tbtn-backpack { background: rgba(210, 160, 40, 0.42); border-color: rgba(255, 210, 80, 0.75); }
+        .tbtn-medkit em {
+            position: absolute; right: 4px; bottom: 3px; font-size: 10px; font-style: normal; font-weight: 800;
+        }
+        #touch-settings-btn {
+            position: fixed; top: calc(128px + env(safe-area-inset-top, 0px));
+            left: calc(14px + var(--safe-l)); z-index: 21;
+            width: 42px; height: 42px; border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.25); background: rgba(10,13,20,0.72);
+            color: #cbd2e0; font-size: 18px; line-height: 1; pointer-events: auto;
+            display: none; place-items: center; cursor: pointer;
+        }
+        body.touch #touch-settings-btn { display: none; }
+        #touch-ui.editing #touch-settings-btn { display: none; }
+
+        #touch-layout-editor {
+            position: fixed; inset: 0; z-index: 45; display: none; pointer-events: none;
+        }
+        #touch-layout-editor.open { display: block; pointer-events: auto; }
+        #touch-layout-toolbar {
+            position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%;
+            transform: translateX(-50%); width: min(520px, calc(100vw - 24px));
+            display: grid; gap: 6px; justify-items: center; text-align: center;
+            background: rgba(10,13,20,0.88); border: 1px solid rgba(78,195,255,0.45);
+            border-radius: 12px; padding: 10px 14px; color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+        }
+        #touch-layout-toolbar strong { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
+        #touch-layout-toolbar span { font-size: 11px; color: #9aa3b5; }
+        #touch-layout-actions { display: flex; gap: 8px; margin-top: 2px; }
+        #touch-layout-actions button {
+            background: #252a36; border: 1px solid rgba(255,255,255,0.14); color: #fff;
+            border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 12px; cursor: pointer;
+        }
+        #touch-layout-done { background: var(--accent); color: #06121b; border-color: transparent; font-weight: 700; }
+
+        .touch-layout-frame {
+            position: absolute; border: 2px dashed rgba(78,195,255,0.85);
+            border-radius: 12px; background: rgba(78,195,255,0.08);
+            touch-action: none; cursor: move; box-sizing: border-box;
+        }
+        .touch-layout-label {
+            position: absolute; top: -20px; left: 0; font-size: 10px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase; color: #4ec3ff;
+            text-shadow: 0 1px 3px #000; pointer-events: none; white-space: nowrap;
+        }
+        .touch-layout-resize {
+            position: absolute; right: -8px; bottom: -8px; width: 18px; height: 18px;
+            border-radius: 50%; border: 2px solid #fff; background: var(--accent);
+            cursor: nwse-resize; pointer-events: auto; padding: 0;
+        }
+
+        /* The right side belongs to the buttons on touch. */
+        body.touch #health-block { width: min(360px, 56vw); bottom: calc(8px + var(--safe-b)); }
+
+        #desktop-hint { display: none; }
+
+        /* ---------- Dev panel ---------- */
+
+        #debug-panel {
+            position: fixed; top: 12px; right: 12px; width: min(380px, calc(100vw - 24px));
+            max-height: calc(100vh - 24px); display: none; flex-direction: column;
+            background: rgba(12, 14, 20, 0.94); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px; color: #e8eaef; font-size: 12px; z-index: 1000;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.45); pointer-events: auto;
+            backdrop-filter: blur(8px);
+        }
+        #debug-panel.open { display: flex; }
+        #debug-panel header {
+            display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        #debug-panel header strong { flex: 1; font-size: 13px; }
+        #debug-close { background: transparent; border: none; color: #aaa; font-size: 20px; cursor: pointer; }
+        .pill {
+            font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+        }
+        .pill.ok { background: #1a4d32; color: #6feca8; }
+        .pill.warn { background: #4d3a1a; color: #ffc866; }
+        .pill.err { background: #4d1a1a; color: #ff7a7a; }
+        .debug-body { overflow-y: auto; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+        #debug-panel section h3 {
+            font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #8b919e; margin-bottom: 6px;
+        }
+        .grid { display: grid; grid-template-columns: 118px 1fr; gap: 4px 8px; line-height: 1.4; }
+        .grid div:nth-child(odd) { color: #8b919e; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        #debug-panel button {
+            background: #252a36; border: 1px solid rgba(255,255,255,0.1); color: #e8eaef;
+            border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 11px; cursor: pointer;
+        }
+        #debug-panel button:hover { background: #323848; }
+        #debug-panel label {
+            display: grid; grid-template-columns: 92px 1fr auto; gap: 6px; align-items: center; margin-bottom: 4px;
+        }
+        #debug-panel label.check { grid-template-columns: auto 1fr; margin-top: 4px; }
+        #debug-panel input[type="range"] { width: 100%; }
+        #debug-panel label span { min-width: 36px; text-align: right; color: #8b919e; }
+        #debug-log {
+            max-height: 140px; overflow-y: auto; background: #0a0c10; border-radius: 6px;
+            padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+        }
+        .log-line { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .log-line.warn { color: #ffc866; }
+        .log-line.error { color: #ff7a7a; }
+        .log-line.info { color: #9aa3b2; }
+    </style>
+</head>
+<body>
+    <canvas id="application-canvas"></canvas>
+
+    <div id="hud">
+        <div id="ff-top-left">
+            <div>
+                <div id="minimap-wrap">
+                    <canvas id="minimap" width="168" height="168"></canvas>
+                    <div id="minimap-ping">46 📶</div>
+                </div>
+                <div id="hud-tools">
+                    <button type="button" class="hud-icon" id="hud-gear" aria-label="Settings">⚙</button>
+                    <button type="button" class="hud-icon" id="hud-mic" aria-label="Microphone">🎙</button>
+                    <button type="button" class="hud-icon" id="hud-speaker" aria-label="Speaker">🔊</button>
+                </div>
+            </div>
+            <div id="squad">
+                <div class="squad-row"><div class="squad-num">1</div><span>You</span><div class="squad-hp"><i id="squad-hp-1"></i></div></div>
+                <div class="squad-row"><div class="squad-num">2</div><span>—</span><div class="squad-hp"><i style="width:0"></i></div></div>
+                <div class="squad-row"><div class="squad-num">3</div><span>—</span><div class="squad-hp"><i style="width:0"></i></div></div>
+                <div class="squad-row"><div class="squad-num">4</div><span>—</span><div class="squad-hp"><i style="width:0"></i></div></div>
+            </div>
+        </div>
+
+        <div id="match-bar">
+            <div id="match-score"><b id="match-score-a">0</b><span>-</span><b id="match-score-b">0</b></div>
+            <div id="match-timer">10:00</div>
+            <div id="match-objective">Objective: 4</div>
+            <div id="match-pips"><i class="on"></i><i></i><i></i><i></i></div>
+        </div>
+
+        <div id="ff-top-right">
+            <div id="gold"><span id="gold-value">700</span></div>
+            <div id="weapon-slots"></div>
+        </div>
+
+        <div id="crosshair"><i></i><i></i><i></i><i></i><i></i></div>
+        <div id="hitmarker"></div>
+
+        <div id="pickup-prompt">
+            <span id="pickup-key">E</span>
+            <span id="pickup-label">Pick up</span>
+        </div>
+
+        <div id="kill-feed"></div>
+
+        <div id="health-block">
+            <div id="skill-row"><div class="skill"></div><div class="skill"></div><div class="skill"></div></div>
+            <div id="health-row"><span>HP</span><b id="health-value">100</b><span>/</span><b id="health-max">100</b></div>
+            <div id="health-bar"><div id="health-fill"></div></div>
+        </div>
+
+        <div id="weapon-block">
+            <div id="weapon-name">Unarmed</div>
+            <div id="weapon-kind"></div>
+            <div id="ammo-row"><b id="ammo-mag">0</b><span id="ammo-reserve">/ 0</span></div>
+            <div id="reload-indicator">Reloading</div>
+        </div>
+
+        <div id="topbar" style="display:none">
+            <span id="score-kills">0</span>
+            <span id="score-deaths">0</span>
+            <span id="score-points">0</span>
+        </div>
+    </div>
+
+    <div id="nameplate-layer"></div>
+    <div id="damage-layer"></div>
+    <div id="hurt-overlay"></div>
+    <div id="scope-overlay"><div id="scope-lines"></div></div>
+
+    <div id="death-screen">
+        <div>
+            <h2>ELIMINATED</h2>
+            <p>by <span id="death-by">Enemy</span></p>
+            <div id="death-timer">3.0</div>
+            <p>Respawning…</p>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <div>
+            <h1>BATTLEGROUND</h1>
+            <div class="sub">TRAINING RANGE · PROTOTYPE</div>
+            <button type="button" id="start-btn">TAP TO PLAY</button>
+            <div id="start-options">
+                <label><input type="checkbox" id="opt-touch" /> On-screen controls (joystick + buttons)</label>
+                <p id="start-layout-hint">Tap ⚙ in-game to move and resize controls</p>
+            </div>
+            <div id="start-keys">
+                <b>Move</b><span>Left joystick / WASD</span>
+                <b>Look</b><span>Swipe / mouse</span>
+                <b>Fire</b><span>Fire button / LMB</span>
+                <b>Aim</b><span>Scope button / RMB</span>
+                <b>Prone</b><span>Prone button / Z</span>
+                <b>Heal</b><span>Medkit button / H</span>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.mjs"></script>
+</body>
+</html>

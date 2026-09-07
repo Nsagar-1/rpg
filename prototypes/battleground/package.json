@@ -1,0 +1,18 @@
+{
+  "name": "battleground-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convert-guns": "node scripts/convert-guns.mjs",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "playcanvas": "file:../.."
+  },
+  "devDependencies": {
+    "fbx2gltf": "^0.9.7-p1",
+    "vite": "8.1.4"
+  }
+}
