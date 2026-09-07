@@ -76,12 +76,24 @@ export function createSoldierRig(app, playerEntity, asset) {
     visual.setLocalPosition(0, -0.9 - aabb.getMin().y * s, 0);
 
     // Collect joints and remember their bind rotations so procedural deltas compose cleanly.
+    // Names carry numeric suffixes (CC_Base_L_Upperarm_050), so match by substring — one
+    // traversal instead of a findByName per role.
+    const nameIndex = /** @type {Map<string, Entity>} */ (new Map());
+    visual.forEach((e) => {
+        if (e.name) {
+            nameIndex.set(e.name, e);
+        }
+    });
     const bones = /** @type {Record<string, Entity>} */ ({});
     for (const [role, fragments] of Object.entries(BONE_FRAGMENTS)) {
         for (const fragment of fragments) {
-            const bone = visual.findByName(fragment)?.[0];
-            if (bone) {
-                bones[role] = bone;
+            for (const [name, entity] of nameIndex) {
+                if (name.includes(fragment)) {
+                    bones[role] = entity;
+                    break;
+                }
+            }
+            if (bones[role]) {
                 break;
             }
         }

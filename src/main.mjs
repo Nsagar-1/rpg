@@ -2,6 +2,7 @@ import {
     AmmoPhysicsWorld,
     AppBase,
     AppOptions,
+    Asset,
     CameraComponentSystem,
     CollisionComponentSystem,
     Color,
