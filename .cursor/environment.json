@@ -1,0 +1,16 @@
+{
+  "install": "npm install",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npx vite",
+      "description": "Vite dev server on port 5560"
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 5560
+    }
+  ]
+}
