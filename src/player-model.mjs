@@ -1,6 +1,6 @@
-import { BoundingBox, Entity, Quat } from '../build/playcanvas';
+import { ANIM_LAYER_OVERWRITE, BoundingBox, Entity, Quat, Vec3 } from '../build/playcanvas';
 
-/** @import { AppBase, Asset, Vec3 } from '../build/playcanvas' */
+/** @import { AppBase, Asset } from '../build/playcanvas' */
 
 /** Target standing height in world units (the player capsule is 1.8 tall). */
 const HEIGHT = 1.8;
@@ -12,22 +12,23 @@ const HEIGHT = 1.8;
  * @type {Record<string, string[]>} role -> candidate name fragments, first match wins.
  */
 const BONE_FRAGMENTS = {
-    hip: ['CC_Base_Hip', 'CC_Base_Pelvis', 'CC_Base_Waist', 'Hip'],
-    spine01: ['CC_Base_Spine01', 'Spine01'],
-    spine02: ['CC_Base_Spine02', 'Spine02'],
-    head: ['CC_Base_Head', 'Head'],
-    uarmL: ['CC_Base_L_Upperarm', 'L_Upperarm'],
-    uarmR: ['CC_Base_R_Upperarm', 'R_Upperarm'],
-    farmL: ['CC_Base_L_Forearm_', 'L_Forearm'],
-    farmR: ['CC_Base_R_Forearm_', 'R_Forearm'],
-    handL: ['CC_Base_L_Hand', 'L_Hand'],
-    handR: ['CC_Base_R_Hand', 'R_Hand'],
-    thighL: ['CC_Base_L_Thigh_', 'L_Thigh'],
-    thighR: ['CC_Base_R_Thigh_', 'R_Thigh'],
-    calfL: ['CC_Base_L_Calf_', 'L_Calf'],
-    calfR: ['CC_Base_R_Calf_', 'R_Calf'],
-    footL: ['CC_Base_L_Foot', 'L_Foot'],
-    footR: ['CC_Base_R_Foot', 'R_Foot']
+    hip: ['mixamorig:Hips', 'CC_Base_Hip', 'CC_Base_Pelvis', 'CC_Base_Waist', 'Hip'],
+    spine00: ['mixamorig:Spine', 'CC_Base_Spine00', 'Spine00'],
+    spine01: ['mixamorig:Spine1', 'CC_Base_Spine01', 'Spine01'],
+    spine02: ['mixamorig:Spine2', 'CC_Base_Spine02', 'Spine02'],
+    head: ['mixamorig:Head', 'CC_Base_Head', 'Head'],
+    uarmL: ['mixamorig:LeftArm', 'CC_Base_L_Upperarm', 'L_Upperarm'],
+    uarmR: ['mixamorig:RightArm', 'CC_Base_R_Upperarm', 'R_Upperarm'],
+    farmL: ['mixamorig:LeftForeArm', 'CC_Base_L_Forearm_', 'L_Forearm'],
+    farmR: ['mixamorig:RightForeArm', 'CC_Base_R_Forearm_', 'R_Forearm'],
+    handL: ['mixamorig:LeftHand', 'CC_Base_L_Hand', 'L_Hand'],
+    handR: ['mixamorig:RightHand', 'CC_Base_R_Hand', 'R_Hand'],
+    thighL: ['mixamorig:LeftUpLeg', 'CC_Base_L_Thigh_', 'L_Thigh'],
+    thighR: ['mixamorig:RightUpLeg', 'CC_Base_R_Thigh_', 'R_Thigh'],
+    calfL: ['mixamorig:LeftLeg', 'CC_Base_L_Calf_', 'L_Calf'],
+    calfR: ['mixamorig:RightLeg', 'CC_Base_R_Calf_', 'R_Calf'],
+    footL: ['mixamorig:LeftFoot', 'CC_Base_L_Foot', 'L_Foot'],
+    footR: ['mixamorig:RightFoot', 'CC_Base_R_Foot', 'R_Foot']
 };
 
 /**
@@ -38,24 +39,60 @@ const BONE_FRAGMENTS = {
  * @type {Record<string, number>}
  */
 const BLEND = {
-    stand: 0.26,
+    idle: 0.26,
+    aim: 0.18,
     run: 0.18,
     walk: 0.18,
+    walkBack: 0.18,
+    strafeL: 0.16,
+    strafeR: 0.16,
     turn: 0.2,
+    crouchIdle: 0.22,
+    crouchWalk: 0.18,
+    crouchTurn: 0.2,
+    proneIdle: 0.3,
+    proneTurnL: 0.2,
+    proneTurnR: 0.2,
+    sit: 0.35,
     jump: 0.1,
     fall: 0.14,
-    dive: 0.12
+    dive: 0.12,
+    death: 0.12
 };
 
 /** Clips that should hold their last frame instead of looping. @type {Record<string, boolean>} */
-const ONE_SHOT = { jump: true, dive: true };
+const ONE_SHOT = { jump: true, dive: true, death: true };
+
+/**
+ * Poses held from frame 0 of a clip that has no dedicated idle in the pack: the state is assigned
+ * at speed 0 so the layer freezes on the first key instead of walking / turning out of the stance.
+ *
+ * @type {Record<string, boolean>}
+ */
+const FROZEN = { crouchIdle: true, proneIdle: true };
+
+/**
+ * Upper-body clips. These play on a masked overlay layer so a reload or a shot reads while the
+ * legs keep running, and they never fight the stance the base layer is holding.
+ *
+ * @type {string[]}
+ */
+const UPPER_KEYS = ['fire', 'firePistol', 'crouchFire', 'reload', 'draw', 'pickUp', 'melee', 'hit'];
+
+/** Seconds the overlay takes to fade in / out. */
+const UPPER_FADE = 0.12;
 
 /** Minimum seconds in a state before a grounded clip change is allowed. */
 const MIN_DWELL = 0.12;
 
+/** Degrees of camera pitch folded into the spine when aiming, as a fraction per joint. */
+const AIM_SPINE_SHARE = { spine00: 0.18, spine01: 0.26, spine02: 0.3, head: 0.26 };
+
 const deltaQ = new Quat();
 const baseQ = new Quat();
 const outQ = new Quat();
+const aimQ = new Quat();
+const aimAxis = new Vec3();
 const snapBox = new BoundingBox();
 
 /**
@@ -145,11 +182,12 @@ function wrapDeg(a) {
  *
  * @param {AppBase} app - Running application (unused today, kept for symmetry with other loaders).
  * @param {Entity} playerEntity - Physics root the visual attaches to.
- * @param {Asset|null} asset - Loaded 'container' asset for soldier.glb, null when unavailable.
+ * @param {Asset|null} asset - Loaded 'container' asset for the body mesh, null when unavailable.
+ * @param {Record<string, object>} [extraTracks] - Extra AnimTracks keyed by locomotion state.
  * @returns {{ visual: Entity, gunAnchor: Entity, pose: (dt: number, state: RigState) => void } | null}
  *   The rig, or null when the model could not be instantiated (caller falls back to primitives).
  */
-export function createSoldierRig(app, playerEntity, asset) {
+export function createSoldierRig(app, playerEntity, asset, extraTracks = {}) {
     if (!asset?.resource) {
         return null;
     }
@@ -199,7 +237,7 @@ export function createSoldierRig(app, playerEntity, asset) {
                 break;
             }
             for (const [name, entity] of nameIndex) {
-                if (name.includes(fragment) && !name.includes('Twist')) {
+                if (name.includes(fragment) && !name.includes('Twist') && !name.includes('Thumb') && !name.includes('End')) {
                     bones[role] = entity;
                     break;
                 }
@@ -222,7 +260,7 @@ export function createSoldierRig(app, playerEntity, asset) {
     // owns world position, so nothing here consumes root motion: pin the two root joints to their
     // bind translation each frame and the locomotion becomes in-place.
     const pinned = /** @type {{ bone: Entity, bind: Vec3 }[]} */ ([]);
-    for (const bone of [nameIndex.get('Root'), bones.hip]) {
+    for (const bone of [nameIndex.get('Root'), nameIndex.get('mixamorig:Hips'), bones.hip]) {
         if (bone && !pinned.some(p => p.bone === bone)) {
             pinned.push({ bone, bind: bone.getLocalPosition().clone() });
         }
@@ -238,13 +276,28 @@ export function createSoldierRig(app, playerEntity, asset) {
     const inherited = Math.hypot(handWorld[0], handWorld[1], handWorld[2]) || 1;
     const cs = 1 / inherited;
     gunAnchor.setLocalScale(cs, cs, cs);
-    gunAnchor.setLocalPosition(0.03 * cs, 0.04 * cs, 0.02 * cs);
-    gunAnchor.setLocalEulerAngles(-90, 0, 90);
+    // Mixamo +Y is wrist → fingers; +Z points out the back of the hand (into the hip on
+    // a lowered rifle idle). CC joints use a different bind, so keep the old socket there.
+    if (nameIndex.has('mixamorig:RightHand')) {
+        // Palm sits on +Z (back of the hand). Previous −Z floated the pistol
+        // in front of the stomach. Grip along the fingers, barrel forward.
+        gunAnchor.setLocalPosition(0, 0.05 * cs, 0.04 * cs);
+        gunAnchor.setLocalEulerAngles(-90, 90, 90);
+    } else {
+        gunAnchor.setLocalPosition(0.03 * cs, 0.04 * cs, 0.02 * cs);
+        gunAnchor.setLocalEulerAngles(-90, 0, 90);
+    }
 
     const model = visual.children[0] ?? visual;
     const tracks = asset.resource.animations ?? [];
     /** @type {Record<string, boolean>} */
     const clips = {};
+    /** @type {Record<string, boolean>} */
+    const upperClips = {};
+    /** @type {Record<string, number>} */
+    const clipDuration = {};
+    /** @type {import('../build/playcanvas').AnimComponentLayer|null} */
+    let upperLayer = null;
     let runDuration = 1.292;
     if (tracks.length && model.addComponent) {
         model.addComponent('anim', { activate: true });
@@ -258,23 +311,62 @@ export function createSoldierRig(app, playerEntity, asset) {
                 trackByKey[key] = animAsset.resource;
             }
         }
-
-        // The motion pack has no idle clip, so hold frame 0 of the turn-in-place clip as a
-        // zero-speed state: a genuine standing pose (its hip sits at bind) that stopping can blend
-        // into. Assigned first so it becomes the default state and the player starts standing.
-        const standTrack = trackByKey.idle ?? trackByKey.turn ?? trackByKey.walk;
-        if (standTrack) {
-            model.anim.assignAnimation('stand', standTrack, undefined, 0, true);
-            clips.stand = true;
+        for (const [key, track] of Object.entries(extraTracks)) {
+            if (track) {
+                trackByKey[key] = track;
+            }
         }
+
+        // Assign the neutral stand first: the first `assignAnimation` builds the default state
+        // graph and its node becomes `defaultState`, so the player spawns standing rather than
+        // mid-stride. Packs without a real idle (Long Horn) fall back to frame 0 of the
+        // turn-in-place clip, held by giving the state speed 0.
+        const idleTrack = trackByKey.idle ?? trackByKey.turn ?? trackByKey.walk;
+        if (idleTrack) {
+            model.anim.assignAnimation('idle', idleTrack, undefined, trackByKey.idle ? 1 : 0, true);
+            clips.idle = true;
+            clipDuration.idle = idleTrack.duration ?? 1;
+        }
+
         for (const [key, track] of Object.entries(trackByKey)) {
-            model.anim.assignAnimation(key, track, undefined, 1, !ONE_SHOT[key]);
+            if (key === 'idle' || UPPER_KEYS.includes(key)) {
+                continue;
+            }
+            model.anim.assignAnimation(key, track, undefined, FROZEN[key] ? 0 : 1, !ONE_SHOT[key]);
             clips[key] = true;
+            clipDuration[key] = track.duration ?? 1;
             if (key === 'run') {
                 runDuration = track.duration || runDuration;
             }
         }
+
+        // Overlay layer: everything from the first spine joint up. `children: true` on that one
+        // path covers chest, neck, head and both arms, so a reload plays on the torso while the
+        // base layer keeps owning the legs and the stance.
+        const maskRoot = bones.spine00 ?? bones.spine01;
+        const upperTracks = UPPER_KEYS.filter(key => trackByKey[key]);
+        if (maskRoot && upperTracks.length) {
+            const parts = [];
+            for (let n = maskRoot; n && n !== model; n = n.parent) {
+                parts.unshift(n.name);
+            }
+            // The binder resolves a curve either against the glTF root name or against the graph
+            // node the component sits on, so register both spellings of the same path.
+            const mask = {
+                [parts.join('/')]: { children: true },
+                [[model.name, ...parts].join('/')]: { children: true }
+            };
+            upperLayer = model.anim.addLayer('upper', 0, mask, ANIM_LAYER_OVERWRITE);
+            for (const key of upperTracks) {
+                const track = trackByKey[key];
+                upperLayer.assignAnimation(key, track, 1, false);
+                upperClips[key] = true;
+                clipDuration[key] = track.duration ?? 1;
+            }
+        }
+
         console.info('[Battleground] Player clips:', Object.keys(clips).join(', ') || 'none');
+        console.info('[Battleground] Upper-body clips:', Object.keys(upperClips).join(', ') || 'none');
     }
 
     /**
@@ -287,12 +379,49 @@ export function createSoldierRig(app, playerEntity, asset) {
     const strideSpan = runDuration * 0.5;
     let phase = 0;
     let clock = 0;
-    let currentClip = clips.stand ? 'stand' : '';
+    let currentClip = clips.idle ? 'idle' : '';
     let dwell = 0;
     let airborne = 0;
     let faceYaw = 0;
     let faced = false;
     let moving = false;
+
+    /** @type {string|null} Logical one-shot requested since the last frame. */
+    let pendingAction = null;
+
+    /** @type {string|null} Overlay clip currently playing. */
+    let activeUpper = null;
+
+    /** Seconds left on the overlay clip. */
+    let upperTimer = 0;
+
+    /**
+     * Queue an upper-body one-shot. Logical names (`fire`) resolve to the stance / weapon
+     * variant on the frame they start, so the caller does not have to know which clips shipped.
+     *
+     * @param {string} name - `fire`, `melee`, `pickUp`, `hit` or a literal overlay clip key.
+     */
+    const playAction = (name) => {
+        pendingAction = name;
+    };
+
+    /**
+     * @param {string} name - Logical action name.
+     * @param {RigState} state - Current movement state.
+     * @returns {string|null} Overlay clip key that actually exists, or null.
+     */
+    const resolveAction = (name, state) => {
+        if (name === 'fire') {
+            if (state.crouch && upperClips.crouchFire) {
+                return 'crouchFire';
+            }
+            if (state.weaponKind === 'Sidearm' && upperClips.firePistol) {
+                return 'firePistol';
+            }
+            return upperClips.fire ? 'fire' : null;
+        }
+        return upperClips[name] ? name : null;
+    };
 
     /**
      * @param {Entity|null} bone - Joint to rotate (no-op when missing).
@@ -322,36 +451,117 @@ export function createSoldierRig(app, playerEntity, asset) {
         if (model.anim && Object.keys(clips).length) {
             airborne = state.grounded ? 0 : airborne + dt;
 
-            // Face the run vector (PlayCanvas forward is -Z). Hold last heading when stopped.
+            // --- Upper body: reload / draw hold for as long as the weapon says, one-shots run
+            // out on their own clip length. Continuous actions outrank a stale shot.
+            let wantUpper = null;
+            if (state.dead) {
+                wantUpper = null;
+            } else if (state.reloading && upperClips.reload) {
+                wantUpper = 'reload';
+            } else if (state.equipping && upperClips.draw) {
+                wantUpper = 'draw';
+            } else {
+                if (pendingAction) {
+                    const resolved = resolveAction(pendingAction, state);
+                    if (resolved) {
+                        activeUpper = resolved;
+                        // A held trigger re-triggers every shot: cap the overlay at the fire
+                        // interval so the clip restarts instead of queueing up behind itself.
+                        upperTimer = Math.min(clipDuration[resolved] ?? 0.4, 0.55);
+                        upperLayer?.transition(resolved, UPPER_FADE);
+                        if (upperLayer) {
+                            upperLayer.activeStateCurrentTime = 0;
+                        }
+                    }
+                }
+                upperTimer = Math.max(0, upperTimer - dt);
+                wantUpper = upperTimer > 0 ? activeUpper : null;
+            }
+            pendingAction = null;
+
+            if (upperLayer) {
+                if (wantUpper && wantUpper !== activeUpper) {
+                    activeUpper = wantUpper;
+                    upperLayer.transition(wantUpper, UPPER_FADE);
+                    upperLayer.activeStateCurrentTime = 0;
+                }
+                const targetWeight = wantUpper ? 1 : 0;
+                upperLayer.weight += (targetWeight - upperLayer.weight) *
+                    Math.min(1, dt / UPPER_FADE);
+            }
+
+            // --- Facing. In combat the body holds the camera heading so the gun points where
+            // the crosshair does and the legs strafe under it; otherwise it turns into the run.
             if (!faced) {
                 faceYaw = state.lookYaw ?? 0;
                 faced = true;
             }
-            // Hysteresis: a single threshold flickers the run/stand blend while the capsule
+            // Hysteresis: a single threshold flickers the run/idle blend while the capsule
             // velocity hovers around it.
             moving = state.speed > (moving ? 0.9 : 1.8);
+            const aiming = (state.aimAmount ?? 0) > 0.5;
+            const combat = aiming || !!state.reloading ||
+                (!!wantUpper && wantUpper !== 'hit' && wantUpper !== 'draw');
+
             let targetYaw = faceYaw;
-            if (moving) {
-                targetYaw = Math.atan2(-(state.vx ?? 0), -(state.vz ?? 0)) * 180 / Math.PI;
-            } else if ((state.aimAmount ?? 0) > 0.5) {
+            if (combat) {
                 targetYaw = state.lookYaw ?? faceYaw;
+            } else if (moving) {
+                targetYaw = Math.atan2(-(state.vx ?? 0), -(state.vz ?? 0)) * 180 / Math.PI;
             }
             const yawErr = wrapDeg(targetYaw - faceYaw);
-            const turning = moving && Math.abs(yawErr) > 45 && !!clips.turn;
+            const turning = !combat && moving && Math.abs(yawErr) > 45 && !!clips.turn;
             // One exponential for both cases. Swapping to a clamped linear rate while the turn
             // clip played put a kink in the heading every time that state flipped.
             faceYaw = wrapDeg(faceYaw + yawErr * (1 - Math.exp(-(turning ? 7 : 13) * dt)));
 
+            // Velocity resolved into the facing frame, so a strafing player gets the sideways
+            // clip instead of a forward walk played sideways.
+            const yawRad = faceYaw * Math.PI / 180;
+            const fwdAmount = -(state.vx ?? 0) * Math.sin(yawRad) - (state.vz ?? 0) * Math.cos(yawRad);
+            const sideAmount = (state.vx ?? 0) * Math.cos(yawRad) - (state.vz ?? 0) * Math.sin(yawRad);
+
             const urgent = airborne > 0.18;
-            let next = firstClip('stand', 'run', 'walk') ?? '';
-            if (urgent) {
-                next = firstClip('jump', 'fall', 'dive') ?? next;
+            const fists = !!state.unarmed;
+            const fast = state.speed > 36;
+            let next = firstClip('idle', 'run', 'walk') ?? '';
+            if (state.dead) {
+                next = firstClip('death', 'dive') ?? next;
+            } else if (urgent) {
+                next = (state.vy ?? 0) > 0.5
+                    ? (firstClip('jump', 'fall') ?? next)
+                    : (firstClip('fall', 'jump') ?? next);
+            } else if (state.sit) {
+                next = firstClip('sit', 'crouchIdle') ?? next;
             } else if (state.prone) {
-                next = firstClip('dive', 'fall') ?? next;
+                if (Math.abs(yawErr) > 25) {
+                    next = firstClip(yawErr > 0 ? 'proneTurnR' : 'proneTurnL', 'proneIdle') ?? next;
+                } else {
+                    next = firstClip('proneIdle', 'dive', 'fall') ?? next;
+                }
+            } else if (state.crouch) {
+                if (moving) {
+                    next = firstClip('crouchWalk', 'walk') ?? next;
+                } else if (Math.abs(yawErr) > 45 && clips.crouchTurn) {
+                    next = 'crouchTurn';
+                } else {
+                    next = firstClip('crouchIdle', 'idle') ?? next;
+                }
             } else if (turning) {
                 next = 'turn';
+            } else if (moving && combat) {
+                // Strafe / backpedal only read while the body is locked to the camera.
+                if (Math.abs(sideAmount) > Math.abs(fwdAmount) * 1.2) {
+                    next = firstClip(sideAmount > 0 ? 'strafeR' : 'strafeL', 'walk') ?? next;
+                } else if (fwdAmount < -0.5) {
+                    next = firstClip('walkBack', 'walk') ?? next;
+                } else {
+                    next = (fast && clips.run) ? 'run' : (firstClip('walk', 'run') ?? next);
+                }
             } else if (moving) {
-                next = firstClip('run', 'walk') ?? next;
+                next = (fast && clips.run) ? 'run' : (firstClip('walk', 'run') ?? next);
+            } else if (aiming) {
+                next = firstClip('aim', 'idle') ?? next;
             }
 
             // Cross-fade instead of a hard `play()`, and hold each state briefly so a jittery
@@ -366,12 +576,14 @@ export function createSoldierRig(app, playerEntity, asset) {
 
             // Continuous playback with the rate matched to ground speed. Scrubbing the playhead
             // needed `anim.speed = 0`, which also froze the transition timer (the layer advances
-            // by `dt * anim.speed`), so no clip change could ever blend.
-            const running = currentClip === 'run' || currentClip === 'walk';
+            // by `dt * anim.speed`), so no clip change could ever blend. `speed` is per component,
+            // not per layer, so hold it at 1 while an overlay plays or the reload sprints too.
+            const strides = currentClip === 'run' || currentClip === 'walk' ||
+                currentClip === 'walkBack' || currentClip === 'crouchWalk';
             const rate = Math.min(1.8, Math.max(1.4, state.speed / 14) * strideSpan);
-            model.anim.speed = running && !model.anim.baseLayer.transitioning ? rate : 1;
+            model.anim.speed = strides && !wantUpper && !model.anim.baseLayer.transitioning ? rate : 1;
 
-            const sink = state.crouch ? 0.34 : 0;
+            const sink = state.prone ? 0.72 : (state.sit ? 0.5 : (state.crouch ? 0.34 : 0));
             visual.setLocalPosition(0, plantY - sink, 0);
             // Mesh binds facing +Z; PlayCanvas move/look yaw 0 is −Z.
             visual.setLocalEulerAngles(0, faceYaw + 180, 0);
@@ -380,6 +592,42 @@ export function createSoldierRig(app, playerEntity, asset) {
             // that snap tracked whichever foot was lowest and bobbed the whole body each stride.
             for (const p of pinned) {
                 p.bone.setLocalPosition(p.bind);
+            }
+
+            // Point the gun at what the camera is looking at. Clips only cover level aim, so the
+            // camera pitch is folded into the spine in world space (bone local axes are not
+            // aligned with the body) and shared out so the bend reads as a lean, not a break.
+            const aimBlend = combat ? 1 : (state.aimAmount ?? 0);
+            const pitch = (state.lookPitch ?? 0) * aimBlend;
+            if (Math.abs(pitch) > 0.5) {
+                aimAxis.copy(visual.right);
+                for (const [role, share] of Object.entries(AIM_SPINE_SHARE)) {
+                    const bone = bones[role];
+                    if (!bone) {
+                        continue;
+                    }
+                    aimQ.setFromAxisAngle(aimAxis, pitch * share);
+                    outQ.mul2(aimQ, bone.getRotation());
+                    bone.setRotation(outQ);
+                }
+            }
+
+            // Rifle clips keep the hands on a gun. On fists, drop the arms to the
+            // sides (Mixamo T-pose hangs with roll) and only swing them while moving.
+            gunAnchor.enabled = !fists;
+            if (fists && !wantUpper) {
+                phase += (moving ? state.speed * 0.085 : 0) * dt;
+                const swing = moving ? Math.sin(phase) : 0;
+                const swing2 = moving ? Math.sin(phase + Math.PI) : 0;
+                const run = Math.min(1, state.speed / 40);
+                const drop = 1.38;
+                const pump = moving ? 0.35 + run * 0.45 : 0;
+                rotate(bones.uarmL, swing2 * pump, 0.03, drop);
+                rotate(bones.farmL, 0.4 + run * 0.12);
+                rotate(bones.uarmR, swing * pump, -0.03, -drop);
+                rotate(bones.farmR, 0.4 + run * 0.12);
+                rotate(bones.handL, 0.12);
+                rotate(bones.handR, 0.12);
             }
             return;
         }
@@ -430,14 +678,22 @@ export function createSoldierRig(app, playerEntity, asset) {
  * @property {number} speed - Horizontal speed in world units.
  * @property {number} [vx] - World-space velocity X (for facing).
  * @property {number} [vz] - World-space velocity Z (for facing).
+ * @property {number} [vy] - World-space velocity Y (rising vs falling).
  * @property {number} [lookYaw] - Camera yaw in degrees.
+ * @property {number} [lookPitch] - Camera pitch in degrees, positive looking up.
  * @property {boolean} crouch - Crouch stance.
  * @property {boolean} prone - Prone stance.
+ * @property {boolean} [sit] - Seated stance.
  * @property {number} aimAmount - 0..1 weapon-ready blend.
  * @property {boolean} grounded - On the floor.
+ * @property {boolean} [unarmed] - Fists only: relaxed arms, no gun pose.
+ * @property {boolean} [reloading] - Reload in progress.
+ * @property {boolean} [equipping] - Weapon being drawn after a switch or pickup.
+ * @property {boolean} [dead] - Awaiting respawn.
+ * @property {string} [weaponKind] - Held weapon category, picks the pistol vs rifle fire clip.
  */
 
 /** Extra runtime flag: when true the player controller must not touch the wrapper transform. */
 
-    return { visual, gunAnchor, pose };
+    return { visual, gunAnchor, pose, playAction };
 }

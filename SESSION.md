@@ -21,48 +21,43 @@ Reference feel: small-map **Free Fire / TDM training range** — one arena, guns
 
 ### What we set out to do
 
-- Drop in the **Long Gorn / Long Horn** Tripo player and drive it with the motion GLB (run, turn, jump). Face the run direction; stop cleanly; stay on the floor and out of walls.
+- Put **X Bot** in the match (not Long Gorn) with Mixamo locomotion, then fix the Desert Eagle grip, per-gun holds, fists-only, and a normal unarmed rest.
 
 ### Shipped this session
 
 | Area | What landed |
 |------|-------------|
-| Player mesh | `long_horn_motion_glb.glb` (Tripo biped + clips). Source FBX: `public/assets/charcter/long_gorn/*.fbx`. Older `long-gorn.glb` / `soldier.glb` still on disk |
-| Inspect | `inspect.html` — orbit viewer; catalog includes Long Gorn, X Bot jump, guns, factory |
-| Sidearm | Desert Eagle GLB as starting pistol (`weapon-data.mjs` / `gun-assets.mjs`) |
-| Facing | Body faces **move velocity**, not camera. Mesh bind is +Z; PlayCanvas forward is −Z (`faceYaw + 180`) |
-| Run clip | Continuous playback, rate tied to ground speed. Clip is two identical strides, so it loops seamlessly (replaced the scrubbed `anim.speed = 0` playhead) |
-| Blending | `baseLayer.transition()` cross-fades with per-clip `BLEND` times; `MIN_DWELL` + move-threshold hysteresis stop state flicker |
-| Stop | Blends into a `stand` state — the turn clip at speed 0, holding a neutral frame. Capsule XZ locked while no WASD |
-| Root motion | `Root` + `Hip` translation pinned to bind every frame, so locomotion is in-place |
-| Collision | Capsule radius **0.58**, Ammo CCD, wall probe. Feet snapped to capsule bottom each frame |
+| Default player | `DEFAULT_PLAYER_ID = x-bot-jump-backward`. `?player=` writes `localStorage` (`battleground.playerId`) |
+| In-game loco | `XBOT_LOCO_URLS` — rifle idle / walk / turn / firing-walk run + `jump-backward.glb`. Loaded in `main.mjs`, merged in `createSoldierRig` |
+| Mixamo bones | `player-model.mjs` prefers `mixamorig:*`; pins `mixamorig:Hips`. Walk unless `speed > 36`, then run |
+| Per-gun grip | `modelHand` on each weapon in `weapon-data.mjs`. `gun-assets` `hand` mode. Recoil stays on the view root |
+| Fists | **3** / ✊ holsters (inventory kept). **G** drops the held gun, including the last. **G** again on fists dumps the rest. `fistMult` 1.35 when unarmed |
+| Unarmed pose | Same loco clips; arms overwritten to a side hang (Mixamo T-pose roll). Capoeira / strafe / ring-jog fist clips removed — they looked like a dance |
 
 ### What broke / felt wrong
 
 | Symptom | Cause (root) |
 |---------|----------------|
-| Ran the opposite way | glTF mesh +Z vs PlayCanvas −Z |
-| Floated / clipped buildings | World AABB used spawn height; capsule too small; high speed tunneled walls |
-| Froze mid-stride, then punched when idle | Pause without idle; `box_01` was wrongly mapped as idle |
-| Player kept "coming back" each stride | Clips bake travel into the **`Hip`** translation channel (run: ~2.8 units along local Y, bind `0`), so the hip snapped back on every wrap. Only `Root` was pinned, and `Root` is static in this pack |
-| Every clip change popped | Scrubbing needed `anim.speed = 0`, which also froze the transition timer — the layer advances by `dt * anim.speed`, so no cross-fade could progress |
-| Body bobbed while running | Per-frame foot snap took the mesh AABB min, which tracked whichever foot was lowest |
+| Long Gorn still spawned without `?player=` | `localStorage` still had `long-gorn` and beat the new default |
+| Desert Eagle at the hip / stomach | Shared CC gun socket. Mixamo `+Z` is out the back of the hand (into the body). Pickup `modelWorld` is not a palm grip |
+| Fists still in a rifle hold | Loco clips are all rifle. Holster hid the mesh but not the arm pose |
+| Capoeira “rest” looked funny | `fist-stand` was Capoeira Idle, plus a pitch-down arm hang from T-pose |
 
 ### Fixes this session
 
 | Fix | Where |
 |-----|--------|
-| Player asset → motion GLB | `main.mjs` |
-| Move-facing + 180° mesh offset + foot plant | `src/player-model.mjs` |
-| Root-motion pin, cross-faded transitions, `stand` state, facing/threshold smoothing | `src/player-model.mjs` — see **Player animation** below |
-| XZ hold on release (3 cm tolerance), wider capsule, wall probe | `player-controller.mjs`, `main.mjs` |
-| Inspect catalog | `src/inspect.mjs` |
+| Mixamo palm socket `(-90, 90, 90)` + `modelHand` per gun | `player-model.mjs`, `weapon-data.mjs`, `gun-assets.mjs`, `weapon-controller.mjs` |
+| `holstered`; `dropActive` returns an array; HUD ✊ slot | `weapon-controller.mjs`, `pickups.mjs`, `hud.mjs`, `desktop-controls.mjs` |
+| Unarmed: hide `gun-anchor`, hang arms at the sides, swing only while moving | `player-model.mjs` (`state.unarmed` from `main.mjs`) |
+| Ground speed 52 → 64 (file may now read 80 if tweaked in the editor) | `player-controller.mjs` |
 
 ### Left open / not done this session
 
-- Still no true idle / walk clip in the motion pack. `stand` fakes one from frame 0 of the turn clip
-  at speed 0, which reads as neutral but has no breathing motion — a real idle would be better.
-- Gun grip on `R_Hand` still approximate (FBX bones are ~100×).
+- Mixamo clips are **not** bound to Long Horn (CC vs `mixamorig`). Retarget later if we want them in-game.
+- No dedicated unarmed idle / jog clip — rest is rifle-idle legs + procedural arms. A real Mixamo standing idle would read better.
+- Gun `modelHand` values are first-pass; Desert Eagle / rifles still need eye-tuning in the palm.
+- Run clip is “firing while walking”, not a true sprint.
 - Real scout drone / backpack inventory UI.
 - Multiplayer squad filling slots 2–4.
 
@@ -80,7 +75,7 @@ npm install
 npx vite
 ```
 
-Open **http://localhost:5560/** (port set in `vite.config.mjs`). If that port is taken, Vite uses **5561**. Inspect: `/inspect.html?asset=long-gorn` or `/inspect.html?asset=x-bot-jump-backward`.
+Open **http://localhost:5560/** (port set in `vite.config.mjs`). If that port is taken, Vite uses **5561**. Inspect: `/inspect.html?asset=long-gorn` or `/inspect.html?asset=x-bot-jump-backward` (X Bot + Mixamo clip dropdown). Mixamo HTML filter: `/mixamo-filter.html`.
 
 Optional URL flags:
 
@@ -97,6 +92,21 @@ npm run convert-guns
 
 Output: `public/assets/models/guns/*.glb`
 
+### Asset pipeline (Mixamo motions)
+
+Clips are Mixamo **without skin**, retargeted to the Mixamo character used at export (`character_id` in the download script). They play on **X Bot** in inspect (`mixamorig:*` bones). Long Horn is a different rig — do not assign these clips to it without retargeting.
+
+```bash
+# Token from Mixamo (DevTools → export request → Authorization: Bearer …). Do not commit it.
+export MIXAMO_TOKEN='…'
+node scripts/download-mixamo-motions.mjs
+node scripts/convert-mixamo-motions.mjs
+```
+
+Add new ids to `src/mixamo-catalog.mjs`, then re-run download + convert. Paste Mixamo grid HTML into `/mixamo-filter.html` to pull ids.
+
+Output: `public/assets/charcter/motion/<id>-<slug>.fbx` and `.glb`
+
 ## Controls
 
 ### Desktop (keyboard + mouse)
@@ -111,9 +121,10 @@ Output: `public/assets/models/guns/*.glb`
 | RMB | Aim down sights |
 | R | Reload |
 | E | Pick up nearby item |
-| G | Drop held weapon |
-| Q / scroll wheel | Cycle weapon |
+| G | Drop held weapon (last gun too). On fists: dump every remaining gun |
+| Q / scroll wheel | Cycle weapon (then fists) |
 | 1 / 2 | Select weapon slot |
+| 3 / ✊ slot | Fists — holster guns, faster run |
 | Space | Jump |
 | Shift | Sprint |
 | C / Ctrl | Crouch (toggle) |
@@ -139,7 +150,9 @@ Pinch-zoom and double-tap zoom are blocked while touch mode is active.
 - [x] **Abandoned factory map** — `factory.glb` with mesh static colliders (`src/map/factory-map.mjs`, 50× scale)
 - [x] **Unified input** — `InputState` shared by desktop + touch (`src/input/`)
 - [x] **PlayerController** — physics third-person walk, jump, crouch, sprint, ADS, health, respawn, recoil recovery; XZ lock on release
-- [x] **Long Horn player** — motion GLB, step-quantized run, face move dir, foot plant, gun on `R_Hand`
+- [x] **X Bot player** — default body (`x-bot-jump-backward.glb` + Mixamo loco). Long Horn still playable via inspect **Use in game**
+- [x] **Fists** — holster (3) or drop (G); unarmed rest = arms at sides; `fistMult` 1.35
+- [x] **Per-gun third-person grip** — `modelHand` (pistol / SMG / rifle / shotgun / sniper)
 - [x] **Weapon system** — 5 weapons (pistol, SMG, rifle, shotgun, sniper), hitscan, spread, ADS FOV, scope overlay, synth gun audio
 - [x] **Low-poly gun GLBs** — FBX → GLB pipeline; view models + world pickup meshes
 - [x] **Pickups** — weapons, ammo, medkits on the factory floor (`src/pickups.mjs`)
@@ -161,7 +174,7 @@ Pinch-zoom and double-tap zoom are blocked while touch mode is active.
 | Dummies | 5 static capsule targets at normalized map positions |
 | Bots | 3 kinematic humanoids inside arena bounds |
 | Pickups | Rifle, SMG, shotgun, sniper + health + ammo scattered on the floor |
-| Player start | Sidearm equipped; ground weapons must be picked up |
+| Player start | X Bot + Desert Eagle; **3** holsters to fists. Ground weapons must be picked up |
 
 **Important:** Static colliders must be **positioned before** `rigidbody` is added (Ammo bakes static transforms). Physics backend (`AmmoPhysicsWorld`) is installed **before** entities are built. `app.start()` runs after the full scene; player uses `respawn()` + `teleport()` so the dynamic body wakes on frame one.
 
@@ -236,6 +249,10 @@ model.anim.assignAnimation('stand', standTrack, undefined, 0, true);
 
 **Assign `stand` first.** The first `assignAnimation` call builds the default state graph and its
 node becomes `defaultState`, which is what makes the player start standing rather than mid-run.
+
+X Bot extra tracks (`XBOT_LOCO_URLS`) overwrite those keys. Mixamo hips are pinned as
+`mixamorig:Hips`. On fists (`state.unarmed`), the same clips keep playing for the legs; arm bones
+are then set from bind to a side hang (T-pose **roll**, not pitch) so the rifle pose does not stick.
 
 ### Anti-jitter details
 
@@ -315,6 +332,11 @@ File: `src/debug-panel.mjs`
 | Factory map loader | `src/map/factory-map.mjs` |
 | Player rig / clips | `src/player-model.mjs` |
 | Asset inspect | `inspect.html`, `src/inspect.mjs` |
+| Character / clip catalog | `src/character-assets.mjs` |
+| Mixamo motion catalog | `src/mixamo-catalog.mjs` |
+| Mixamo HTML id filter | `mixamo-filter.html` |
+| Mixamo download | `scripts/download-mixamo-motions.mjs` |
+| Mixamo FBX → GLB | `scripts/convert-mixamo-motions.mjs` |
 | Player movement / look | `src/scripts/player-controller.mjs` |
 | Weapon / raycast | `src/scripts/weapon-controller.mjs` |
 | Bots | `src/scripts/bot-controller.mjs` |
@@ -344,7 +366,8 @@ File: `src/debug-panel.mjs`
 | Gun GLBs | `public/assets/models/guns/*.glb` | View models + pickup meshes |
 | Desert Eagle | `public/assets/models/guns/desert-eagle.glb` | Starting sidearm |
 | Long Horn (play) | `public/assets/charcter/long_horn_motion_glb.glb` | Skinned player + run/turn/jump/fall/dive |
-| X Bot jump (inspect) | `public/assets/charcter/X Bot@Jump Backward.fbx` → `x-bot-jump-backward.glb` | Mixamo jump clip; inspect catalog |
+| X Bot (play + inspect) | `public/assets/charcter/x-bot-jump-backward.glb` | Default in-game body; Mixamo host for inspect clips |
+| Mixamo motions | `public/assets/charcter/motion/*.fbx` + `*.glb` | 73 no-skin clips; inspect X Bot dropdown |
 | Long Gorn FBX | `public/assets/charcter/long_gorn/*.fbx` | Authoring; convert with `fbx2gltf` if replaced |
 | Soldier (unused) | `public/assets/models/player/soldier.glb` | Previous body; keep as fallback |
 | Sounds | Synth in `src/audio.mjs` | Placeholder; swap for `.ogg` later |
@@ -366,7 +389,7 @@ File: `src/debug-panel.mjs`
 - [ ] Multiplayer (Node + Socket.io / Colyseus)
 - [ ] Bot shooting (movement / strafe only today)
 - [x] Third-person follow camera + placeholder body
-- [x] Character body GLB — Long Horn motion GLB, step-quantized run (`src/player-model.mjs`)
+- [x] Character body GLB — X Bot default; Long Horn still in the catalog (`src/player-model.mjs`)
 - [ ] Recorded gun / footstep audio assets
 - [ ] Unity asset parity doc
 
@@ -400,3 +423,5 @@ File: `src/debug-panel.mjs`
 - 2026-09-07 — Inspect viewer (`inspect.html`); Desert Eagle as spawn pistol
 - 2026-09-07 — Long Horn player: FBX → `long-gorn.glb`, then swapped to `long_horn_motion_glb.glb` (run/turn/jump). Face move dir (+180 mesh). Run clip halved (2 steps / L-R quarters). Stop freezes stride + locks capsule XZ (bind restore was sliding the hips back). Capsule 0.58 + CCD + foot plant
 - 2026-09-07 — Smoothed player locomotion: pinned `Root` + `Hip` translation to bind (clips bake travel into `Hip` — the "coming back"), swapped playhead scrubbing for continuous playback (`anim.speed = 0` froze the transition timer, so nothing could blend), cross-faded clip changes via `baseLayer.transition()`, added a `stand` state (turn clip at speed 0) for a real stop pose, hysteresis on the move threshold, single easing law for facing, dropped the per-frame foot snap. See **Player animation** section
+- 2026-09-07 — Mixamo pack: HTML id filter, download 73 no-skin FBX (`MIXAMO_TOKEN`), convert to GLB, play on inspect **X Bot**. Fixed `mixamo.com` → null `baseLayer.play`. Long Horn not bound (CC vs Mixamo bones)
+- 2026-09-07 — X Bot in the match: Mixamo idle/walk/run/turn/jump, hip pin, `?player=` persists. Per-gun `modelHand`. Fists (3 / G) + 1.35× run. Unarmed rest is arms-at-sides (dropped Capoeira idle)

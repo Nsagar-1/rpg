@@ -65,10 +65,17 @@ export function createDesktopControls({ canvas, input, isBlocked }) {
             case 'ControlLeft':
                 input.crouch = !input.crouch;
                 input.prone = false;
+                input.sit = false;
                 break;
             case 'KeyZ':
                 input.prone = !input.prone;
                 input.crouch = false;
+                input.sit = false;
+                break;
+            case 'KeyX':
+                input.sit = !input.sit;
+                input.crouch = false;
+                input.prone = false;
                 break;
             case 'KeyH':
                 input.queueMedkit();
@@ -93,6 +100,9 @@ export function createDesktopControls({ canvas, input, isBlocked }) {
                 break;
             case 'Digit2':
                 input.queueSwitch(1);
+                break;
+            case 'Digit3':
+                input.queueSwitch(-1);
                 break;
             case 'KeyF':
                 input.fire = true;

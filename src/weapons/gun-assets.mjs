@@ -23,7 +23,7 @@ export const GUN_MODEL_FILES = {
 /**
  * @typedef {object} GunAssets
  * @property {(modelId: string) => boolean} has - Whether a GLB finished loading.
- * @property {(def: WeaponDef, mode: 'view'|'world') => Entity|null} instantiate - Spawn a tuned copy.
+ * @property {(def: WeaponDef, mode: 'view'|'world'|'hand') => Entity|null} instantiate - Spawn a tuned copy.
  */
 
 /**
@@ -40,6 +40,25 @@ export function createGunAssets(app) {
         assets[id] = new Asset(`gun-${id}`, 'container', { url });
         app.assets.add(assets[id]);
     }
+
+    /**
+     * @param {WeaponDef} def - Weapon definition.
+     * @param {'view'|'world'|'hand'} mode - Which transform to apply.
+     * @returns {ModelTransform|undefined} Offset for that mode.
+     */
+    const resolveTransform = (def, mode) => {
+        if (mode === 'view') {
+            return def.modelView;
+        }
+        if (mode === 'hand') {
+            if (def.modelHand) {
+                return def.modelHand;
+            }
+            const world = def.modelWorld;
+            return world ? { ...world, scale: (world.scale ?? 1) * 2.8 } : undefined;
+        }
+        return def.modelWorld;
+    };
 
     /**
      * @param {ModelTransform|undefined} transform - Per-weapon offsets from {@link WeaponDef}.
@@ -75,7 +94,7 @@ export function createGunAssets(app) {
 
         /**
          * @param {WeaponDef} def - Weapon definition carrying model id + transforms.
-         * @param {'view'|'world'} mode - First-person view model or ground pickup.
+         * @param {'view'|'world'|'hand'} mode - FPS view, ground pickup, or third-person grip.
          * @returns {Entity|null} Instantiated entity, or null when the model is unavailable.
          */
         instantiate(def, mode) {
@@ -84,8 +103,7 @@ export function createGunAssets(app) {
             }
 
             const entity = assets[def.model].resource.instantiateRenderEntity({});
-            const transform = mode === 'view' ? def.modelView : def.modelWorld;
-            applyTransform(transform, entity);
+            applyTransform(resolveTransform(def, mode), entity);
             return entity;
         }
     };

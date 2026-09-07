@@ -28,6 +28,8 @@ export class InputState {
 
     prone = false;
 
+    sit = false;
+
     /** @type {boolean} */
     _fireTap = false;
 
@@ -184,6 +186,7 @@ export class InputState {
         this.sprint = false;
         this.crouch = false;
         this.prone = false;
+        this.sit = false;
         this._fireTap = false;
         this._jump = false;
         this._reload = false;

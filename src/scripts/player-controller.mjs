@@ -45,7 +45,7 @@ export class PlayerController extends Script {
     lookSens = 0.12;
 
     /** @attribute @title Ground Speed @type {number} */
-    speedGround = 52;
+    speedGround = 80;
 
     /** @attribute @title Air Speed @type {number} */
     speedAir = 6;
@@ -58,6 +58,9 @@ export class PlayerController extends Script {
 
     /** @attribute @title Aim Multiplier @type {number} */
     aimMult = 0.65;
+
+    /** @attribute @title Fist Speed Multiplier @type {number} */
+    fistMult = 1.35;
 
     /** @attribute @title Jump Force @type {number} */
     jumpForce = 850;
@@ -130,6 +133,11 @@ export class PlayerController extends Script {
         return this._angles.y;
     }
 
+    /** @returns {number} Camera pitch in degrees, positive looking up. */
+    get pitch() {
+        return this._angles.x;
+    }
+
     /**
      * @returns {number} Current health.
      */
@@ -161,6 +169,11 @@ export class PlayerController extends Script {
     /** @returns {boolean} True while prone on the ground. */
     get proning() {
         return this.input?.prone && this._grounded;
+    }
+
+    /** @returns {boolean} True while seated on the ground. */
+    get sitting() {
+        return this.input?.sit && this._grounded;
     }
 
     /** @returns {boolean} True while moving fast enough to widen weapon spread. */
@@ -307,9 +320,10 @@ export class PlayerController extends Script {
     _updateCamera() {
         const aiming = !!this.input?.aim;
         const prone = !!this.input?.prone;
-        const crouch = !!this.input?.crouch && !prone;
+        const sit = !!this.input?.sit && !prone;
+        const crouch = !!this.input?.crouch && !prone && !sit;
         const dist = aiming ? 2.6 : (prone ? 3.2 : 4.8);
-        const height = prone ? 0.38 : (crouch ? 1.05 : 1.55);
+        const height = prone ? 0.38 : ((crouch || sit) ? 1.05 : 1.55);
         const shoulder = aiming ? 0.58 : 0.7;
 
         rotation.setFromEulerAngles(this._angles.x, this._angles.y, 0);
@@ -381,6 +395,9 @@ export class PlayerController extends Script {
             speed *= this.sprintMult;
         } else if (this.input.aim) {
             speed *= this.aimMult;
+        }
+        if (!this.entity.script?.weaponController?.active && !this.input.prone && !this.input.crouch) {
+            speed *= this.fistMult;
         }
 
         v.set(this.input.moveX, 0, this.input.moveY);

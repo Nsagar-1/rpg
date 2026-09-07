@@ -259,17 +259,22 @@ export function createPickupSystem({ app, player, input, getWeapon: weaponAccess
     const dropHeld = () => {
         const weapon = weaponAccessor();
         const dropped = weapon?.dropActive();
-        if (!dropped) {
+        if (!dropped?.length) {
             return null;
         }
 
         const pos = player.getPosition();
         const fwd = player.forward;
-        spawnWeapon(dropped.def.id, pos.x + fwd.x * 1.2, pos.z + fwd.z * 1.2, {
-            ammo: dropped.reserve + dropped.ammo,
-            respawn: 0
+        dropped.forEach((slot, i) => {
+            const side = i - (dropped.length - 1) * 0.5;
+            spawnWeapon(slot.def.id, pos.x + fwd.x * 1.2 + side * 0.55, pos.z + fwd.z * 1.2, {
+                ammo: slot.reserve + slot.ammo,
+                respawn: 0
+            });
         });
-        return `Dropped ${dropped.def.name}`;
+        return dropped.length === 1
+            ? `Dropped ${dropped[0].def.name}`
+            : `Dropped ${dropped.length} weapons`;
     };
 
     app.on('update', (/** @type {number} */ dt) => {

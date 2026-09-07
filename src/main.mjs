@@ -43,6 +43,7 @@ import { HitBox } from './scripts/hit-box.mjs';
 import { PlayerController } from './scripts/player-controller.mjs';
 import { WeaponController } from './scripts/weapon-controller.mjs';
 import { resolvePlayerAssetUrl } from './character-assets.mjs';
+import { XBOT_HOST_URL, XBOT_LOCO_URLS } from './mixamo-catalog.mjs';
 import { createGunAssets } from './weapons/gun-assets.mjs';
 import { loadFactoryMap } from './map/factory-map.mjs';
 
@@ -116,13 +117,36 @@ console.info('[Battleground] Gun models loaded');
 
 // Skinned soldier used as the third-person body; primitives stay as the fallback body.
 const playerModelUrl = resolvePlayerAssetUrl();
-const soldierAsset = new Asset('player-soldier', 'container', { url: playerModelUrl });
+/**
+ * @param {string} url - Container URL.
+ * @param {string} tag - Asset name.
+ * @returns {Promise<Asset>} Loaded container.
+ */
+function loadContainer(url, tag) {
+    const asset = new Asset(tag, 'container', { url });
+    app.assets.add(asset);
+    return new Promise((resolve, reject) => {
+        asset.once('load', () => resolve(asset));
+        asset.once('error', (err) => reject(new Error(String(err ?? `Failed to load ${url}`))));
+        app.assets.load(asset);
+    });
+}
+
+const soldierAsset = await loadContainer(playerModelUrl, 'player-soldier');
 console.info('[Battleground] Player model:', playerModelUrl);
-app.assets.add(soldierAsset);
-await new Promise((resolve) => {
-    soldierAsset.once('load', resolve);
-    app.assets.load(soldierAsset);
-});
+
+/** @type {Record<string, object>} */
+const extraTracks = {};
+if (playerModelUrl === XBOT_HOST_URL) {
+    await Promise.all(Object.entries(XBOT_LOCO_URLS).map(async ([key, url]) => {
+        const clipAsset = await loadContainer(url, `player-loco-${key}`);
+        const track = clipAsset.resource?.animations?.[0]?.resource;
+        if (track) {
+            extraTracks[key] = track;
+        }
+    }));
+    console.info('[Battleground] X Bot locomotion:', Object.keys(extraTracks).join(', ') || 'none');
+}
 
 const factoryMap = await loadFactoryMap(app);
 SPAWN.copy(factoryMap.spawn);
@@ -198,7 +222,7 @@ function addPrim(name, parent, material, pos, scale, type = 'box') {
  * @returns {{ visual: Entity, gunAnchor: Entity, pose?: (dt: number, state: any) => void }} Visual, weapon hand, per-frame poser.
  */
 function createPlayerAvatar(playerEntity, soldierAsset) {
-    const rig = createSoldierRig(app, playerEntity, soldierAsset ?? null);
+    const rig = createSoldierRig(app, playerEntity, soldierAsset ?? null, extraTracks);
     if (rig) {
         console.info('[Battleground] Player model active');
         return rig;
@@ -540,7 +564,8 @@ if (poseRig) {
             crouch: !!input.crouch && !input.prone,
             prone: !!input.prone,
             aimAmount: weaponScript.aiming ? 1 : 0,
-            grounded: playerScript.grounded
+            grounded: playerScript.grounded,
+            unarmed: !weaponScript.active
         });
     });
 }

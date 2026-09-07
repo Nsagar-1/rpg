@@ -32,6 +32,7 @@
  * @property {string} [model] - GLB model id from gun-assets (converted from FBX).
  * @property {{ scale?: number, position?: number[], rotation?: number[] }} [modelView] - FPS offsets.
  * @property {{ scale?: number, position?: number[], rotation?: number[] }} [modelWorld] - Pickup offsets.
+ * @property {{ scale?: number, position?: number[], rotation?: number[] }} [modelHand] - Third-person grip in the palm socket.
  */
 
 /** @type {Record<string, WeaponDef>} */
@@ -64,7 +65,8 @@ export const WEAPONS = {
         shotFreq: 320,
         model: 'desert-eagle',
         modelView: { scale: 1, position: [0.14, -0.08, -0.18], rotation: [0, 90, 0] },
-        modelWorld: { scale: 0.12, position: [0, 0.02, 0.04], rotation: [0, 90, 0] }
+        modelWorld: { scale: 0.12, position: [0, 0.02, 0.04], rotation: [0, 90, 0] },
+        modelHand: { scale: 0.32, position: [0.02, 0.01, 0.02], rotation: [8, 90, 6] }
     },
 
     smg: {
@@ -96,7 +98,8 @@ export const WEAPONS = {
         shotFreq: 260,
         model: 'fammas',
         modelView: { scale: 0.03, position: [0.14, -0.08, -0.22], rotation: [0, 90, 0] },
-        modelWorld: { scale: 0.038, position: [0, 0.05, 0], rotation: [0, 90, 0] }
+        modelWorld: { scale: 0.038, position: [0, 0.05, 0], rotation: [0, 90, 0] },
+        modelHand: { scale: 0.11, position: [0.05, 0.04, 0], rotation: [0, 90, 0] }
     },
 
     rifle: {
@@ -128,7 +131,8 @@ export const WEAPONS = {
         shotFreq: 190,
         model: 'ar70',
         modelView: { scale: 0.03, position: [0.14, -0.08, -0.28], rotation: [0, 90, 0] },
-        modelWorld: { scale: 0.038, position: [0, 0.05, 0], rotation: [0, 90, 0] }
+        modelWorld: { scale: 0.038, position: [0, 0.05, 0], rotation: [0, 90, 0] },
+        modelHand: { scale: 0.11, position: [0.08, 0.03, 0], rotation: [0, 90, 4] }
     },
 
     shotgun: {
@@ -156,7 +160,8 @@ export const WEAPONS = {
             { scale: [0.07, 0.2, 0.12], position: [0, -0.13, 0.06] },
             { scale: [0.06, 0.06, 0.34], position: [0, 0.01, -0.54], color: [0.14, 0.14, 0.16] }
         ],
-        shotFreq: 130
+        shotFreq: 130,
+        modelHand: { scale: 0.95, position: [0.04, 0.02, 0.02], rotation: [6, 0, 0] }
     },
 
     sniper: {
@@ -188,7 +193,8 @@ export const WEAPONS = {
         shotFreq: 110,
         model: 'fn-f2000',
         modelView: { scale: 0.028, position: [0.12, -0.07, -0.34], rotation: [0, 90, 0] },
-        modelWorld: { scale: 0.036, position: [0, 0.05, 0], rotation: [0, 90, 0] }
+        modelWorld: { scale: 0.036, position: [0, 0.05, 0], rotation: [0, 90, 0] },
+        modelHand: { scale: 0.1, position: [0.1, 0.04, 0], rotation: [0, 90, 0] }
     }
 };
 

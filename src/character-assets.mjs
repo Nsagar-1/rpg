@@ -1,9 +1,11 @@
-/** @typedef {{ id: string, name: string, url: string, playable?: boolean }} CharacterAsset */
+import { MIXAMO_MOTIONS, XBOT_HOST_URL, motionGlbUrl, motionLabel } from './mixamo-catalog.mjs';
+
+/** @typedef {{ id: string, name: string, url: string, playable?: boolean, extraClips?: boolean }} CharacterAsset */
 
 /** @type {CharacterAsset[]} */
 export const CHARACTER_ASSETS = [
     { id: 'long-gorn', name: 'Long Gorn', url: '/assets/charcter/long_horn_motion_glb.glb', playable: true },
-    { id: 'x-bot-jump-backward', name: 'X Bot — Jump Backward', url: '/assets/charcter/x-bot-jump-backward.glb', playable: false },
+    { id: 'x-bot-jump-backward', name: 'X Bot', url: XBOT_HOST_URL, playable: true, extraClips: true },
     { id: 'soldier', name: 'Soldier', url: '/assets/models/player/soldier.glb', playable: false }
 ];
 
@@ -22,11 +24,23 @@ export const MOTION_CLIPS = [
         id: 'jump-backward',
         name: 'Jump Backward',
         url: '/assets/charcter/jump-backward.glb',
-        hostUrl: '/assets/charcter/x-bot-jump-backward.glb'
+        hostUrl: XBOT_HOST_URL
     }
 ];
 
-export const DEFAULT_PLAYER_ID = 'long-gorn';
+/**
+ * Extra Mixamo clips shown in the X Bot inspect dropdown. Loaded on demand.
+ *
+ * @type {{ name: string, label: string, url: string, extra: true }[]}
+ */
+export const XBOT_EXTRA_CLIPS = MIXAMO_MOTIONS.map((motion) => ({
+    name: motionLabel(motion),
+    label: motionLabel(motion),
+    url: motionGlbUrl(motion),
+    extra: true
+}));
+
+export const DEFAULT_PLAYER_ID = 'x-bot-jump-backward';
 
 const STORAGE_KEY = 'battleground.playerId';
 
@@ -35,7 +49,7 @@ const STORAGE_KEY = 'battleground.playerId';
  * @returns {string} Display / state name for the clip.
  */
 export function clipName(clip) {
-    return clip.resource?.name || clip.name || 'clip';
+    return clip.label || clip.resource?.name || clip.name || 'clip';
 }
 
 /**
@@ -55,6 +69,7 @@ export function resolvePlayerAssetUrl() {
     const param = new URLSearchParams(location.search).get('player');
     const fromParam = CHARACTER_ASSETS.find((item) => item.id === param);
     if (fromParam?.playable) {
+        savePlayerChoice(fromParam.id);
         return fromParam.url;
     }
 

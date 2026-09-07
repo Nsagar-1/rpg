@@ -2,41 +2,15 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { MIXAMO_MOTIONS, motionSlug } from '../src/mixamo-catalog.mjs';
+
 const CHARACTER_ID = '2dee24f8-3b49-48af-b735-c6377509eaac';
 const OUT_DIR = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '../public/assets/charcter/motion'
 );
 
-const MOTIONS = [
-    { id: '116180902', name: 'Turn Right', desc: 'Turn Right While Crouching Game Blend' },
-    { id: '117510902', name: 'Prone Left Turn', desc: 'Turning Left While Prone Game Blend' },
-    { id: '117520902', name: 'Prone Right Turn', desc: 'Turning Right While Prone Game Blend' },
-    { id: '116170902', name: 'Turn Left', desc: 'Turn Left While Crouching Game Blend' },
-    { id: '101420901', name: 'Gunplay', desc: 'Gunplay With Remington Shotgun' },
-    { id: '101430901', name: 'Gunplay', desc: 'Male Standing Fantasy Gunplay With Hand Cannon' },
-    { id: '101430902', name: 'Gunplay', desc: 'Male Kneeling Fantasy Gunplay With Hand Cannon' },
-    { id: '101450908', name: 'Gunplay', desc: 'Standing Shooting Rapid Fire' },
-    { id: '101450907', name: 'Gunplay', desc: 'Shooting' },
-    { id: '101450906', name: 'Gunplay', desc: 'Cover To Shooting' },
-    { id: '101450905', name: 'Gunplay', desc: 'Standing Shooting Rapid Fire' },
-    { id: '104290901', name: 'Gunplay', desc: 'Duck And Look Around Apprehensively' },
-    { id: '130780901', name: 'Shooting', desc: 'Firing A Gun' },
-    { id: '112400901', name: 'Shooting Gun', desc: 'Shooting Handgun' },
-    { id: '130760901', name: 'Drawing Gun', desc: 'Drawing Gun From Lower Back' },
-    { id: '130810901', name: 'Aiming', desc: 'Turning Around To Aim Gun' },
-    { id: '101710901', name: 'Reloading', desc: 'Gun Reload While Walking' },
-    { id: '102560901', name: 'Female Peek And Aim', desc: 'Female Turnaround Gun Aim' },
-    { id: '102550901', name: 'Femme Peek Around Corner', desc: 'Female Peek Around Corner With Gun' },
-    { id: '136610901', name: 'Aiming Gun', desc: 'Picking Up Gun From Ground To Aiming' },
-    { id: '137570901', name: 'Sitting Gun Motion', desc: 'Sitting And Motioning With A Gun' },
-    { id: '115050901', name: 'Shooting Pistol', desc: 'Shooting A Pistol From Behind Cover' },
-    { id: '112390901', name: 'Shooting Arrow', desc: 'Shooting With Bow And Arrow' },
-    { id: '116100901', name: 'Rifle Run To Dying', desc: 'Getting Shot While Running With An Aimed Rifle' },
-    { id: '125970901', name: 'Rifle Idle', desc: 'Two Hand Lowered Gun Rifle Idle' },
-    { id: '112170902', name: 'Piano Playing', desc: 'Playing Multiple Runs On A Piano' },
-    { id: '119860901', name: 'Wall Run', desc: 'Male Runs Up A Wall Onto A Platform' }
-];
+const MOTIONS = MIXAMO_MOTIONS;
 
 const token = process.env.MIXAMO_TOKEN;
 if (!token) {
@@ -54,14 +28,6 @@ function headers(extra = {}) {
         Referer: 'https://www.mixamo.com/',
         ...extra
     };
-}
-
-function slug(motion) {
-    const label = motion.name.toLowerCase() === motion.desc.toLowerCase()
-        ? motion.name
-        : `${motion.name} ${motion.desc}`;
-    const s = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    return `${motion.id}-${s}`;
 }
 
 function sleep(ms) {
@@ -179,7 +145,7 @@ async function downloadFile(url, dest) {
 await mkdir(OUT_DIR, { recursive: true });
 
 for (const [index, motion] of MOTIONS.entries()) {
-    const file = path.join(OUT_DIR, `${slug(motion)}.fbx`);
+    const file = path.join(OUT_DIR, `${motionSlug(motion)}.fbx`);
     process.stdout.write(`[${index + 1}/${MOTIONS.length}] ${motion.id} ${motion.name}… `);
     try {
         await access(file);

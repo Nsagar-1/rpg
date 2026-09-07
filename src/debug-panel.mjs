@@ -174,7 +174,7 @@ export function createDebugPanel(ctx) {
     sliders.spawnY.value = String(ctx.spawn.y);
     sliders.spawnZ.value = String(ctx.spawn.z);
     sliders.gravity.value = String(ctx.app.systems.rigidbody?.gravity.y ?? -18);
-    sliders.speed.value = String(ctx.getPlayer()?.speedGround ?? 52);
+    sliders.speed.value = String(ctx.getPlayer()?.speedGround ?? 64);
     sliders.jump.value = String(ctx.getPlayer()?.jumpForce ?? 850);
     sliders.sens.value = String(ctx.getPlayer()?.lookSens ?? 0.12);
     sliders.damage.value = String(ctx.getWeapon()?.damageMult ?? 1);

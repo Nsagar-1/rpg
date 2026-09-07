@@ -21,10 +21,10 @@ import {
     createGraphicsDevice
 } from '../build/playcanvas';
 
-import { CHARACTER_ASSETS, MOTION_CLIPS, clipName, pickDefaultClip, savePlayerChoice } from './character-assets.mjs';
+import { CHARACTER_ASSETS, MOTION_CLIPS, XBOT_EXTRA_CLIPS, clipName, pickDefaultClip, savePlayerChoice } from './character-assets.mjs';
 import { GUN_MODEL_FILES } from './weapons/gun-assets.mjs';
 
-/** @typedef {{ id: string, name: string, url: string, group: string, playable?: boolean, hostUrl?: string }} CatalogItem */
+/** @typedef {{ id: string, name: string, url: string, group: string, playable?: boolean, hostUrl?: string, extraClips?: boolean }} CatalogItem */
 
 /** Groups that carry clips, so they get the motion toolbar and a per-row Motion button. */
 const ANIMATED_GROUPS = new Set(['Characters', 'Clips']);
@@ -42,7 +42,8 @@ const CATALOG = [
         name: item.name,
         url: item.url,
         group: 'Characters',
-        playable: item.playable
+        playable: item.playable,
+        extraClips: item.extraClips
     })),
     ...MOTION_CLIPS.map((item) => ({
         id: `clip-${item.id}`,
@@ -183,9 +184,15 @@ const syncPlayButton = (playing) => {
  * @returns {string} Display and state name.
  */
 const clipLabel = (clip) => {
+    if (clip.label) {
+        return clip.label;
+    }
     const raw = clipName(clip);
-    return activeItem?.group === 'Clips' && /^mixamo\.com$/i.test(raw) ? activeItem.name : raw;
+    return /^mixamo\.com$/i.test(raw) ? (activeItem?.name || 'clip') : raw;
 };
+
+/** PlayCanvas treats `.` in a state name as a blend-tree path and then never creates a base layer. */
+const stateName = (name) => name.replace(/\./g, '-');
 
 /**
  * Show / hide motion toolbar for the active catalog item.
@@ -225,8 +232,10 @@ const populateClipSelect = (clips) => {
  */
 const assignClip = (model, name, clip, opts = {}) => {
     const loop = opts.loop ?? !/jump|dive|attack|hit|die|fall/i.test(name);
-    model.anim.assignAnimation(name, clip.resource, undefined, 1, loop);
-    model.anim.baseLayer.play(name);
+    const track = clip.resource?.resource ?? clip.resource;
+    const state = stateName(name);
+    model.anim.assignAnimation(state, track, undefined, 1, loop);
+    model.anim.baseLayer?.play(state);
     if (opts.play === false) {
         model.anim.speed = 0;
         syncPlayButton(false);
@@ -241,7 +250,7 @@ const assignClip = (model, name, clip, opts = {}) => {
 /**
  * @param {boolean} [play=true] - Start playback immediately.
  */
-const playSelectedClip = (play = true) => {
+const playSelectedClip = async (play = true) => {
     if (!animModel?.anim) {
         return;
     }
@@ -249,6 +258,21 @@ const playSelectedClip = (play = true) => {
     const clip = activeClips.find((c) => clipLabel(c) === name) ?? pickDefaultClip(activeClips);
     if (!clip) {
         return;
+    }
+    if (clip.extra && !clip.resource) {
+        setStatus(`Loading ${clipLabel(clip)}…`);
+        try {
+            const asset = await loadContainer(clip.url, clip.name);
+            const anim = asset.resource.animations?.[0];
+            clip.resource = anim?.resource ?? anim;
+            if (!clip.resource) {
+                setStatus(`No animation in ${clip.url}`, 'err');
+                return;
+            }
+        } catch (err) {
+            setStatus(err instanceof Error ? err.message : String(err), 'err');
+            return;
+        }
     }
     assignClip(animModel, clipLabel(clip), clip, { play });
     setStatus(`Playing ${clipLabel(clip)}`, 'ok');
@@ -341,20 +365,28 @@ const loadItem = async (item, opts = {}) => {
         modelRoot = root;
         animModel = model;
 
-        const clips = clipAsset.resource.animations ?? [];
+        const clips = [...(clipAsset.resource.animations ?? [])];
+        if (item.extraClips) {
+            clips.push(...XBOT_EXTRA_CLIPS.map((extra) => ({ ...extra })));
+        }
         activeClips = clips;
         populateClipSelect(clips);
 
         if (clips.length) {
             model.addComponent('anim', { activate: true });
-            const play = pickDefaultClip(clips);
+            const play = clips.find((c) => c.resource) ?? pickDefaultClip(clips);
             const playName = clipLabel(play);
-            if (withMotion || !ANIMATED_GROUPS.has(item.group)) {
-                assignClip(model, playName, play, { play: true });
-                setStatus(`Loaded — ${clips.length} clip${clips.length === 1 ? '' : 's'} (playing ${playName})`, 'ok');
+            const autoPlay = withMotion || !ANIMATED_GROUPS.has(item.group);
+            if (play.extra && !play.resource) {
+                await playSelectedClip(autoPlay);
             } else {
-                assignClip(model, playName, play, { play: false });
-                setStatus(`Loaded — ${clips.length} clip${clips.length === 1 ? '' : 's'}. Press Motion or Play.`, 'ok');
+                assignClip(model, playName, play, { play: autoPlay });
+                setStatus(
+                    autoPlay
+                        ? `Loaded — ${clips.length} clip${clips.length === 1 ? '' : 's'} (playing ${playName})`
+                        : `Loaded — ${clips.length} clip${clips.length === 1 ? '' : 's'}. Press Motion or Play.`,
+                    'ok'
+                );
             }
         } else {
             setStatus('Loaded — no clips (static mesh)', 'ok');
@@ -429,9 +461,9 @@ playBtn.addEventListener('click', () => {
         syncPlayButton(false);
         setStatus('Paused', 'ok');
     } else {
-        if (activeClipName) {
+        if (activeClipName && animModel.anim.baseLayer) {
             animModel.anim.speed = 1;
-            animModel.anim.baseLayer.play(activeClipName);
+            animModel.anim.baseLayer.play(stateName(activeClipName));
             syncPlayButton(true);
             setStatus(`Playing ${activeClipName}`, 'ok');
         } else {

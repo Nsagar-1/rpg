@@ -120,17 +120,18 @@ export function createHud({ app, camera, input, getWeapon, getPlayer, getTargets
     // --- Weapon -----------------------------------------------------------
 
     app.on('weapon:state', (/** @type {any} */ state) => {
-        ammoMag.textContent = String(state.ammo);
-        ammoReserve.textContent = `/ ${state.reserve}`;
+        const armed = !!state.slots[state.activeSlot] && state.activeSlot >= 0;
+        ammoMag.textContent = armed ? String(state.ammo) : '—';
+        ammoReserve.textContent = armed ? `/ ${state.reserve}` : '';
         weaponName.textContent = state.name;
         weaponKind.textContent = state.kind;
         reloadEl.classList.toggle('show', state.reloading);
-        ammoMag.classList.toggle('empty', state.ammo === 0);
+        ammoMag.classList.toggle('empty', armed && state.ammo === 0);
 
-        slotsEl.innerHTML = state.slots.map((/** @type {any} */ slot, /** @type {number} */ i) => {
+        const gunSlots = state.slots.map((/** @type {any} */ slot, /** @type {number} */ i) => {
             const active = i === state.activeSlot ? ' active' : '';
             if (!slot) {
-                return `<button type="button" class="slot${active}" data-slot="${i}"><i class="slot-fist">✊</i></button>`;
+                return `<button type="button" class="slot${active}" data-slot="${i}"><i class="slot-fist">—</i></button>`;
             }
             return `<button type="button" class="slot${active}" data-slot="${i}">
                 <b>${slot.name}</b>
@@ -138,6 +139,8 @@ export function createHud({ app, camera, input, getWeapon, getPlayer, getTargets
                 ${state.reloading && i === state.activeSlot ? '<em>Reload</em>' : ''}
             </button>`;
         }).join('');
+        const fistsActive = state.activeSlot < 0 ? ' active' : '';
+        slotsEl.innerHTML = `${gunSlots}<button type="button" class="slot${fistsActive}" data-slot="-1"><i class="slot-fist">✊</i></button>`;
     });
 
     slotsEl.addEventListener('click', (e) => {

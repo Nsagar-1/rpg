@@ -66,6 +66,9 @@ export class WeaponController extends Script {
     /** @type {number} */
     activeSlot = 0;
 
+    /** True while guns stay in inventory but the hands are empty. */
+    holstered = false;
+
     /** @type {number} */
     _cooldown = 0;
 
@@ -114,7 +117,7 @@ export class WeaponController extends Script {
      * @returns {WeaponSlot|null} The held weapon, or null when unarmed.
      */
     get active() {
-        return this.slots[this.activeSlot];
+        return this.holstered ? null : this.slots[this.activeSlot];
     }
 
     /**
@@ -180,24 +183,38 @@ export class WeaponController extends Script {
     }
 
     /**
-     * @param {number} index - Slot index, or -2 to cycle to the next occupied slot.
+     * @param {number} index - Slot index, -1 for fists, or -2 to cycle (guns then fists).
      * @param {boolean} [force] - Rebuild the view model even if the slot did not change.
      */
     selectSlot(index, force = false) {
-        let target = index;
-        if (index === -2) {
-            target = (this.activeSlot + 1) % this.slots.length;
-            if (!this.slots[target]) {
-                target = this.slots.findIndex(s => !!s);
-            }
-        }
-        if (target < 0 || target >= this.slots.length || !this.slots[target]) {
-            return;
-        }
-        if (target === this.activeSlot && !force) {
+        if (index === -1) {
+            this.holster(force);
             return;
         }
 
+        let target = index;
+        if (index === -2) {
+            if (this.holstered) {
+                target = this.slots.findIndex(s => !!s);
+            } else {
+                const next = (this.activeSlot + 1) % this.slots.length;
+                target = this.slots[next] ? next : -1;
+            }
+            if (target === -1) {
+                this.holster();
+                return;
+            }
+        }
+
+        if (target < 0 || target >= this.slots.length || !this.slots[target]) {
+            this.holster();
+            return;
+        }
+        if (!this.holstered && target === this.activeSlot && !force) {
+            return;
+        }
+
+        this.holstered = false;
         this.activeSlot = target;
         this._reloading = false;
         this._equipTimer = EQUIP_TIME;
@@ -206,20 +223,46 @@ export class WeaponController extends Script {
     }
 
     /**
-     * Drop the held weapon.
+     * Put every gun away and fight with fists. Inventory is unchanged.
      *
-     * @returns {WeaponSlot|null} The dropped weapon, or null when it was the last one.
+     * @param {boolean} [force] - Rebuild even if already unarmed.
+     */
+    holster(force = false) {
+        if (this.holstered && !force) {
+            return;
+        }
+        this.holstered = true;
+        this._reloading = false;
+        this._equipTimer = 0;
+        this._buildViewModel();
+        this._emitState();
+    }
+
+    /**
+     * Drop the held weapon. Already on fists: dump every remaining gun.
+     *
+     * @returns {WeaponSlot[]|null} Dropped weapons, or null when there was nothing to drop.
      */
     dropActive() {
-        const occupied = this.slots.filter(s => !!s).length;
-        if (occupied <= 1) {
-            return null;
+        if (this.holstered || !this.active) {
+            const dumped = /** @type {WeaponSlot[]} */ (this.slots.filter(s => !!s));
+            if (!dumped.length) {
+                return null;
+            }
+            this.slots.fill(null);
+            this.holster(true);
+            return dumped;
         }
 
         const dropped = this.slots[this.activeSlot];
         this.slots[this.activeSlot] = null;
-        this.selectSlot(this.slots.findIndex(s => !!s), true);
-        return dropped;
+        const next = this.slots.findIndex(s => !!s);
+        if (next === -1) {
+            this.holster(true);
+        } else {
+            this.selectSlot(next, true);
+        }
+        return dropped ? [dropped] : null;
     }
 
     /**
@@ -441,15 +484,13 @@ export class WeaponController extends Script {
         }
 
         const root = new Entity(`view-${slot.def.id}`);
-        const model = this.gunAssets?.instantiate(slot.def, this.gunAnchor ? 'world' : 'view');
+        const model = this.gunAssets?.instantiate(slot.def, this.gunAnchor ? 'hand' : 'view');
 
         if (model) {
             root.addChild(model);
-            if (this.gunAnchor) {
-                const s = model.getLocalScale();
-                model.setLocalScale(s.x * 2.8, s.y * 2.8, s.z * 2.8);
-            }
         } else {
+            const grip = new Entity('grip');
+            root.addChild(grip);
             for (const part of slot.def.parts) {
                 const mat = new StandardMaterial();
                 const c = part.color ?? slot.def.bodyColor;
@@ -462,10 +503,18 @@ export class WeaponController extends Script {
                 piece.addComponent('render', { type: 'box', material: mat });
                 piece.setLocalScale(part.scale[0], part.scale[1], part.scale[2]);
                 piece.setLocalPosition(part.position[0], part.position[1], part.position[2]);
-                root.addChild(piece);
+                grip.addChild(piece);
             }
 
-            root.setLocalScale(this.gunAnchor ? 0.9 : 0.55, this.gunAnchor ? 0.9 : 0.55, this.gunAnchor ? 0.9 : 0.55);
+            const hand = this.gunAnchor ? slot.def.modelHand : null;
+            const s = hand?.scale ?? (this.gunAnchor ? 0.9 : 0.55);
+            grip.setLocalScale(s, s, s);
+            if (hand?.position) {
+                grip.setLocalPosition(hand.position[0], hand.position[1], hand.position[2]);
+            }
+            if (hand?.rotation) {
+                grip.setLocalEulerAngles(hand.rotation[0], hand.rotation[1], hand.rotation[2]);
+            }
         }
 
         const parent = this.gunAnchor ?? this.camera;
@@ -528,13 +577,13 @@ export class WeaponController extends Script {
     _emitState() {
         const slot = this.active;
         this.app.fire('weapon:state', {
-            name: slot?.def.name ?? 'Unarmed',
-            kind: slot?.def.kind ?? '',
+            name: slot?.def.name ?? 'Fists',
+            kind: slot?.def.kind ?? 'Melee',
             ammo: slot?.ammo ?? 0,
             magazine: slot?.def.magazine ?? 0,
             reserve: slot?.reserve ?? 0,
             reloading: this._reloading,
-            activeSlot: this.activeSlot,
+            activeSlot: this.holstered ? -1 : this.activeSlot,
             slots: this.slots.map(s => (s ? { id: s.def.id, name: s.def.name, ammo: s.ammo, reserve: s.reserve } : null))
         });
     }
