@@ -1,5 +1,6 @@
 import {
     AmmoPhysicsWorld,
+    AnimComponentSystem,
     AppBase,
     AppOptions,
     Asset,
@@ -34,18 +35,20 @@ import { InputState } from './input/input-state.mjs';
 import { createDesktopControls } from './input/desktop-controls.mjs';
 import { createTouchControls } from './input/touch-controls.mjs';
 import { createPickupSystem } from './pickups.mjs';
+import { createLoginFlow } from './auth/login.mjs';
 import { createSoldierRig } from './player-model.mjs';
 import { BotController } from './scripts/bot-controller.mjs';
 import { DamageTarget } from './scripts/damage-target.mjs';
 import { HitBox } from './scripts/hit-box.mjs';
 import { PlayerController } from './scripts/player-controller.mjs';
 import { WeaponController } from './scripts/weapon-controller.mjs';
+import { resolvePlayerAssetUrl } from './character-assets.mjs';
 import { createGunAssets } from './weapons/gun-assets.mjs';
 import { loadFactoryMap } from './map/factory-map.mjs';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('application-canvas'));
-const startScreen = /** @type {HTMLElement} */ (document.getElementById('start-screen'));
-const startBtn = /** @type {HTMLButtonElement} */ (document.getElementById('start-btn'));
+const loginScreen = /** @type {HTMLElement} */ (document.getElementById('login-screen'));
+const lobbyScreen = /** @type {HTMLElement} */ (document.getElementById('lobby-screen'));
 const touchOpt = /** @type {HTMLInputElement} */ (document.getElementById('opt-touch'));
 
 const SPAWN = new Vec3(0, 2, 10);
@@ -80,6 +83,7 @@ createOptions.componentSystems = [
     RenderComponentSystem,
     CameraComponentSystem,
     LightComponentSystem,
+    AnimComponentSystem,
     ScriptComponentSystem,
     CollisionComponentSystem,
     RigidBodyComponentSystem
@@ -111,7 +115,9 @@ await gunAssets.load();
 console.info('[Battleground] Gun models loaded');
 
 // Skinned soldier used as the third-person body; primitives stay as the fallback body.
-const soldierAsset = new Asset('player-soldier', 'container', { url: '/assets/models/player/soldier.glb' });
+const playerModelUrl = resolvePlayerAssetUrl();
+const soldierAsset = new Asset('player-soldier', 'container', { url: playerModelUrl });
+console.info('[Battleground] Player model:', playerModelUrl);
 app.assets.add(soldierAsset);
 await new Promise((resolve) => {
     soldierAsset.once('load', resolve);
@@ -184,12 +190,21 @@ function addPrim(name, parent, material, pos, scale, type = 'box') {
 }
 
 /**
- * Visible third-person body. Render-only — the player's capsule owns physics.
+ * Visible third-person body. Uses the soldier GLB with a procedural walk rig when the model
+ * loads; falls back to primitive boxes otherwise.
  *
  * @param {Entity} playerEntity - Physics root.
- * @returns {{ visual: Entity, gunAnchor: Entity }} Visual root and weapon hand.
+ * @param {Asset|null} soldierAsset - Loaded soldier container asset.
+ * @returns {{ visual: Entity, gunAnchor: Entity, pose?: (dt: number, state: any) => void }} Visual, weapon hand, per-frame poser.
  */
 function createPlayerAvatar(playerEntity, soldierAsset) {
+    const rig = createSoldierRig(app, playerEntity, soldierAsset ?? null);
+    if (rig) {
+        console.info('[Battleground] Player model active');
+        return rig;
+    }
+    console.warn('[Battleground] Soldier model unavailable — using placeholder boxes');
+
     const visual = new Entity('visual');
     playerEntity.addChild(visual);
     visual.setLocalPosition(0, -0.9, 0);
@@ -286,7 +301,7 @@ cameraEntity.addComponent('camera', {
 const player = new Entity('player');
 app.root.addChild(player);
 player.setPosition(SPAWN);
-player.addComponent('collision', { type: 'capsule', radius: 0.42, height: 1.8 });
+player.addComponent('collision', { type: 'capsule', radius: 0.58, height: 1.8 });
 player.addComponent('rigidbody', {
     type: 'dynamic',
     mass: 100,
@@ -294,9 +309,12 @@ player.addComponent('rigidbody', {
     angularDamping: 0,
     linearFactor: Vec3.ONE,
     angularFactor: Vec3.ZERO,
-    friction: 0.5,
+    friction: 0.85,
     restitution: 0
 });
+const ammoBody = player.rigidbody.body;
+ammoBody?.setCcdMotionThreshold?.(0.02);
+ammoBody?.setCcdSweptSphereRadius?.(0.5);
 player.addComponent('script');
 app.root.addChild(cameraEntity);
 
@@ -422,11 +440,71 @@ document.getElementById('hud-gear')?.addEventListener('click', () => {
         touchControls.openLayoutEditor();
     }
 });
+
+// --- Login → lobby → play (before desktop controls — isBlocked reads loginFlow) ---
+
+const prefersTouch = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+const forcedTouch = new URLSearchParams(window.location.search).get('touch');
+touchOpt.checked = forcedTouch !== null ? forcedTouch !== '0' : prefersTouch;
+
+/**
+ * @param {boolean} on - Show the on-screen controls.
+ */
+function setTouchMode(on) {
+    touchControls.setVisible(on);
+    document.body.classList.toggle('touch', on);
+    /** @type {HTMLElement} */ (document.getElementById('pickup-key')).textContent = on ? 'TAP' : 'E';
+}
+
+touchOpt.addEventListener('change', () => {
+    if (!loginFlow.isPreGame()) {
+        setTouchMode(touchOpt.checked);
+    }
+});
+
+/** @type {import('./auth/login.mjs').AuthUser|null} */
+let signedInUser = null;
+
+/** @type {(() => void)|null} */
+let lockDesktopOnPlay = null;
+
+const loginFlow = createLoginFlow({
+    loginScreen,
+    lobbyScreen,
+    googleBtnHost: /** @type {HTMLElement} */ (document.getElementById('google-signin-btn')),
+    guestBtn: /** @type {HTMLButtonElement} */ (document.getElementById('guest-btn')),
+    playBtn: /** @type {HTMLButtonElement} */ (document.getElementById('play-btn')),
+    signOutBtn: /** @type {HTMLButtonElement} */ (document.getElementById('lobby-signout')),
+    authError: /** @type {HTMLElement} */ (document.getElementById('auth-error')),
+    authSetupHint: /** @type {HTMLElement} */ (document.getElementById('auth-setup-hint')),
+    userAvatar: /** @type {HTMLImageElement} */ (document.getElementById('lobby-avatar')),
+    userName: /** @type {HTMLElement} */ (document.getElementById('lobby-name')),
+    userEmail: /** @type {HTMLElement} */ (document.getElementById('lobby-email')),
+    userBadge: /** @type {HTMLElement} */ (document.getElementById('lobby-badge')),
+    onUserChange: (user) => {
+        signedInUser = user;
+        const squadName = document.querySelector('#squad .squad-row span');
+        if (squadName) {
+            squadName.textContent = user?.displayName ?? 'You';
+        }
+    },
+    onStartGame: () => {
+        unlockAudio();
+        setTouchMode(touchOpt.checked);
+        lockDesktopOnPlay?.();
+    }
+});
+
 const desktopControls = createDesktopControls({
     canvas,
     input,
-    isBlocked: () => startScreen.classList.contains('hidden') === false
+    isBlocked: () => loginFlow.isPreGame()
 });
+lockDesktopOnPlay = () => {
+    if (!touchOpt.checked) {
+        desktopControls.lock();
+    }
+};
 
 // Rescue the player if physics ever drops them out of the world.
 let fallRescueEnabled = true;
@@ -449,40 +527,6 @@ playerScript.respawn();
 // Everyone starts with a sidearm; the good guns are on the ground.
 weaponScript.pickUp('pistol');
 
-// --- Start screen -----------------------------------------------------------
-
-const prefersTouch = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
-const forcedTouch = new URLSearchParams(window.location.search).get('touch');
-touchOpt.checked = forcedTouch !== null ? forcedTouch !== '0' : prefersTouch;
-
-/**
- * @param {boolean} on - Show the on-screen controls.
- */
-function setTouchMode(on) {
-    touchControls.setVisible(on);
-    document.body.classList.toggle('touch', on);
-    /** @type {HTMLElement} */ (document.getElementById('pickup-key')).textContent = on ? 'TAP' : 'E';
-}
-
-touchOpt.addEventListener('change', () => setTouchMode(touchOpt.checked));
-setTouchMode(touchOpt.checked);
-
-function startGame() {
-    startScreen.classList.add('hidden');
-    unlockAudio();
-    if (!touchOpt.checked) {
-        desktopControls.lock();
-    }
-}
-
-startBtn.addEventListener('click', startGame);
-startScreen.addEventListener('click', (e) => {
-    // The options row is interactive; anywhere else on the splash starts the match.
-    if (!(e.target).closest('#start-options')) {
-        startGame();
-    }
-});
-
 // Drive the procedural locomotion rig from the same state the camera reads.
 if (poseRig) {
     app.on('update', (/** @type {number} */ dt) => {
@@ -490,6 +534,9 @@ if (poseRig) {
         const speed = velocity ? Math.hypot(velocity.x, velocity.z) : 0;
         poseRig(dt, {
             speed,
+            vx: velocity?.x ?? 0,
+            vz: velocity?.z ?? 0,
+            lookYaw: playerScript.yaw,
             crouch: !!input.crouch && !input.prone,
             prone: !!input.prone,
             aimAmount: weaponScript.aiming ? 1 : 0,
@@ -500,7 +547,7 @@ if (poseRig) {
 
 // Clicking back into the canvas re-captures the mouse after Esc.
 canvas.addEventListener('click', () => {
-    if (!touchOpt.checked && startScreen.classList.contains('hidden')) {
+    if (!touchOpt.checked && !loginFlow.isPreGame()) {
         desktopControls.lock();
     }
 });

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mixamo ID filter</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 24px; background: #0b0d12; color: #e8eaef;
+            font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        h1 { font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: #9aa3b5; }
+        p { color: #8b93a5; max-width: 720px; }
+        textarea, pre {
+            width: 100%; min-height: 220px; margin: 10px 0 16px; padding: 12px;
+            border: 1px solid #2a3140; border-radius: 8px; background: #12161f; color: #fff;
+            font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        pre { min-height: 0; white-space: pre-wrap; }
+        button {
+            padding: 8px 14px; margin-right: 8px; border: 0; border-radius: 8px;
+            background: #4ec3ff; color: #0b0d12; font: inherit; font-weight: 600; cursor: pointer;
+        }
+        button.ghost { background: #1c2230; color: #cbd2e0; }
+        .meta { margin: 8px 0 0; color: #6b7385; }
+    </style>
+</head>
+<body>
+    <h1>Mixamo ID filter</h1>
+    <p>Paste Mixamo product HTML. IDs come from <code>/motions/NUMBER/</code> in thumbnail URLs.</p>
+    <textarea id="src" placeholder="Paste Mixamo HTML here"></textarea>
+    <div>
+        <button type="button" id="parse">Extract IDs</button>
+        <button type="button" class="ghost" id="copy">Copy list</button>
+        <button type="button" class="ghost" id="clear">Clear</button>
+    </div>
+    <p class="meta" id="count"></p>
+    <pre id="out"></pre>
+    <script>
+        const src = document.getElementById('src');
+        const out = document.getElementById('out');
+        const count = document.getElementById('count');
+
+        function parse(html) {
+            const seen = new Set();
+            const rows = [];
+            const re = /thumbnails\/motions\/(\d+)\/[\s\S]*?<p class="text-capitalize">\s*([^<]+)\s*<\/p>[\s\S]*?Description:\s*<!-- \/react-text --><!-- react-text: \d+ -->([^<]+)/gi;
+            let m;
+            while ((m = re.exec(html))) {
+                const id = m[1];
+                if (seen.has(id)) continue;
+                seen.add(id);
+                rows.push({ id, name: m[2].trim(), desc: m[3].trim() });
+            }
+            if (!rows.length) {
+                const ids = html.matchAll(/thumbnails\/motions\/(\d+)\//g);
+                for (const hit of ids) {
+                    if (seen.has(hit[1])) continue;
+                    seen.add(hit[1]);
+                    rows.push({ id: hit[1], name: '', desc: '' });
+                }
+            }
+            return rows;
+        }
+
+        function render() {
+            const rows = parse(src.value);
+            out.textContent = rows.map((r) => {
+                const label = r.desc && r.name && r.name.toLowerCase() !== r.desc.toLowerCase()
+                    ? `${r.name} — ${r.desc}`
+                    : (r.desc || r.name);
+                return label ? `${r.id}  ${label}` : r.id;
+            }).join('\n');
+            count.textContent = rows.length ? `${rows.length} animation${rows.length === 1 ? '' : 's'}` : '';
+        }
+
+        document.getElementById('parse').onclick = render;
+        document.getElementById('clear').onclick = () => {
+            src.value = '';
+            out.textContent = '';
+            count.textContent = '';
+        };
+        document.getElementById('copy').onclick = async () => {
+            if (!out.textContent) render();
+            await navigator.clipboard.writeText(out.textContent);
+        };
+        src.addEventListener('input', render);
+    </script>
+</body>
+</html>

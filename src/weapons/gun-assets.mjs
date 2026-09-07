@@ -16,7 +16,8 @@ export const GUN_MODEL_FILES = {
     'fn-f2000': '/assets/models/guns/fn-f2000.glb',
     'fn-scar': '/assets/models/guns/fn-scar.glb',
     l85a1: '/assets/models/guns/l85a1.glb',
-    m16a1: '/assets/models/guns/m16a1.glb'
+    m16a1: '/assets/models/guns/m16a1.glb',
+    'desert-eagle': '/assets/models/guns/desert-eagle.glb'
 };
 
 /**

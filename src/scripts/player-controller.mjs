@@ -108,6 +108,12 @@ export class PlayerController extends Script {
     /** @type {number} */
     deaths = 0;
 
+    /** @type {number|null} XZ lock while no move input, so physics cannot slide the body back. */
+    _holdX = null;
+
+    /** @type {number|null} */
+    _holdZ = null;
+
     initialize() {
         if (!this.camera) {
             throw new Error('PlayerController: camera entity is required');
@@ -336,8 +342,7 @@ export class PlayerController extends Script {
         this.camera.setPosition(offset);
         this.camera.setEulerAngles(this._angles.x, this._angles.y, 0);
 
-        // Skinned rigs (soldier GLB) own their wrapper position/rotation via the procedural
-        // poser; only the primitive fallback is driven directly from stance here.
+        // Primitive fallback owns stance + look-yaw. Skinned wrappers face move dir in pose().
         if (this.visual && !this.visual.skinned) {
             this.visual.enabled = offset.distance(origin) > 1.15;
             this.visual.setLocalPosition(0, prone ? 0.15 : (crouch ? -0.25 : -0.9), 0);
@@ -392,9 +397,43 @@ export class PlayerController extends Script {
         offset.add(right.mulScalar(v.x));
 
         const velocity = this._rigidbody.linearVelocity.add(offset);
-        const alpha = damp(this._grounded ? 0.99 : 0.99925, dt);
-        velocity.x = math.lerp(velocity.x, 0, alpha);
-        velocity.z = math.lerp(velocity.z, 0, alpha);
+        if (this.input.moveX === 0 && this.input.moveY === 0) {
+            velocity.x = 0;
+            velocity.z = 0;
+            const p = this.entity.getPosition();
+            if (this._holdX === null) {
+                this._holdX = p.x;
+                this._holdZ = p.z;
+                // Tolerance is well above solver noise: yanking the body back at millimetre
+                // drift fought physics every frame and read as a twitch while standing still.
+            } else if (Math.hypot(p.x - this._holdX, p.z - this._holdZ) > 0.03) {
+                this._rigidbody.teleport(this._holdX, p.y, this._holdZ);
+            }
+        } else {
+            this._holdX = null;
+            this._holdZ = null;
+            const alpha = damp(this._grounded ? 0.99 : 0.99925, dt);
+            velocity.x = math.lerp(velocity.x, 0, alpha);
+            velocity.z = math.lerp(velocity.z, 0, alpha);
+        }
+
+        // Probe ahead so high speed cannot tunnel the capsule through thin factory walls.
+        if (offset.x !== 0 || offset.z !== 0) {
+            rayEnd.set(start.x + offset.x * 14, start.y, start.z + offset.z * 14);
+            const wall = system.raycastFirst(start, rayEnd, {
+                filterCallback: (/** @type {Entity} */ e) => e !== this.entity
+            });
+            if (wall && wall.point.distance(start) < 0.95) {
+                const nx = wall.normal.x;
+                const nz = wall.normal.z;
+                const into = velocity.x * nx + velocity.z * nz;
+                if (into < 0) {
+                    velocity.x -= nx * into;
+                    velocity.z -= nz * into;
+                }
+            }
+        }
+
         this._rigidbody.linearVelocity = velocity;
     }
 

@@ -38,7 +38,7 @@
 export const WEAPONS = {
     pistol: {
         id: 'pistol',
-        name: 'P92 Pistol',
+        name: 'Desert Eagle',
         kind: 'Sidearm',
         damage: 26,
         headshotMult: 2,
@@ -62,9 +62,9 @@ export const WEAPONS = {
             { scale: [0.04, 0.04, 0.1], position: [0, 0.01, -0.2], color: [0.3, 0.31, 0.34] }
         ],
         shotFreq: 320,
-        model: 'ar15',
-        modelView: { scale: 0.028, position: [0.14, -0.08, -0.18], rotation: [0, 90, 0] },
-        modelWorld: { scale: 0.035, position: [0, 0.05, 0], rotation: [0, 90, 0] }
+        model: 'desert-eagle',
+        modelView: { scale: 1, position: [0.14, -0.08, -0.18], rotation: [0, 90, 0] },
+        modelWorld: { scale: 0.12, position: [0, 0.02, 0.04], rotation: [0, 90, 0] }
     },
 
     smg: {

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Battleground — Asset Inspect</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #e8eaef;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+        #application-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+        #ui {
+            position: fixed; inset: 0; pointer-events: none; z-index: 10;
+            display: grid; grid-template-columns: min(280px, 42vw) 1fr;
+        }
+        #sidebar {
+            pointer-events: auto; background: rgba(10, 13, 20, 0.88);
+            border-right: 1px solid rgba(255,255,255,0.08);
+            padding: 16px 14px 20px; overflow: auto;
+            backdrop-filter: blur(10px);
+        }
+        #sidebar h1 { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #9aa3b5; }
+        #sidebar h1 a { color: #4ec3ff; text-decoration: none; font-weight: 700; }
+        #asset-search {
+            width: 100%; margin: 12px 0 10px; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12); background: #12161f; color: #fff; font: inherit;
+        }
+        .group { margin-top: 14px; }
+        .group strong {
+            display: block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+            color: #6b7385; margin-bottom: 6px;
+        }
+        .asset-btn {
+            width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 4px;
+            border: 1px solid transparent; border-radius: 8px; background: transparent;
+            color: #cbd2e0; font: inherit; font-size: 13px; cursor: pointer;
+        }
+        .asset-btn:hover { background: rgba(255,255,255,0.06); }
+        .asset-btn.active { background: rgba(78,195,255,0.16); border-color: rgba(78,195,255,0.45); color: #fff; }
+        .asset-row { display: flex; gap: 4px; margin-bottom: 4px; }
+        .asset-row .asset-btn { flex: 1; margin-bottom: 0; }
+        .motion-btn {
+            flex: 0 0 auto; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid rgba(111,236,168,0.35); background: rgba(111,236,168,0.12);
+            color: #9ef0c4; font: inherit; font-size: 11px; font-weight: 600;
+            letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+        }
+        .motion-btn:hover { background: rgba(111,236,168,0.22); color: #fff; }
+
+        #motion-controls {
+            display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center;
+        }
+        #motion-controls[hidden] { display: none !important; }
+        #clip-select {
+            flex: 1 1 100%; padding: 6px 8px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12); background: #12161f; color: #fff; font: inherit; font-size: 12px;
+        }
+        .motion-action {
+            padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.06); color: #e8eaef; font: inherit; font-size: 12px; cursor: pointer;
+        }
+        .motion-action:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+        .motion-action:disabled { opacity: 0.35; cursor: default; }
+        #use-in-game {
+            border-color: rgba(78,195,255,0.45); background: rgba(78,195,255,0.14); color: #9fe0ff;
+        }
+        #use-in-game:hover:not(:disabled) { background: rgba(78,195,255,0.28); }
+
+        #hud {
+            pointer-events: none; padding: 16px 18px; display: flex; flex-direction: column;
+            justify-content: space-between; align-items: flex-end;
+        }
+        #meta {
+            background: rgba(10,13,20,0.72); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 10px 12px; min-width: 200px; pointer-events: auto;
+        }
+        #meta b { font-size: 15px; }
+        #meta p { font-size: 11px; color: #8b93a5; margin-top: 4px; line-height: 1.45; }
+        #hint {
+            font-size: 11px; color: #9aa3b5; text-shadow: 0 1px 4px #000;
+            background: rgba(10,13,20,0.55); padding: 6px 10px; border-radius: 8px;
+        }
+        #status { font-size: 12px; color: #ffc866; margin-top: 8px; }
+        #status.ok { color: #6feca8; }
+        #status.err { color: #ff7a7a; }
+    </style>
+</head>
+<body>
+    <canvas id="application-canvas"></canvas>
+    <div id="ui">
+        <aside id="sidebar">
+            <h1><a href="/">Battleground</a> · Inspect</h1>
+            <input id="asset-search" type="search" placeholder="Filter assets" />
+            <div id="asset-list"></div>
+        </aside>
+        <div id="hud">
+            <div id="meta">
+                <b id="asset-name">—</b>
+                <p id="asset-path"></p>
+                <div id="status">Pick an asset</div>
+                <div id="motion-controls" hidden>
+                    <select id="clip-select" aria-label="Animation clip"></select>
+                    <button type="button" id="motion-play" class="motion-action">Play</button>
+                    <button type="button" id="motion-replay" class="motion-action">Replay</button>
+                    <button type="button" id="use-in-game" class="motion-action">Use in game</button>
+                </div>
+            </div>
+            <div id="hint">Drag orbit · Scroll zoom · Right-drag / two-finger pan</div>
+        </div>
+    </div>
+    <script type="module" src="/src/inspect.mjs"></script>
+</body>
+</html>

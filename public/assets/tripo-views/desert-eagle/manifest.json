@@ -1,0 +1,14 @@
+{
+  "kind": "object",
+  "prompt": "Desert Eagle .50 AE pistol, oversized stainless steel slide, black polymer grip, exposed barrel, iron sights, matte and brushed metal, game weapon, muzzle pointing left on the front view, no magazine hanging out, no holster",
+  "model": "google/gemini-2.5-flash-image",
+  "aspect_ratio": "1:1",
+  "files": {
+    "front": "/Users/sagarneupane/web-engine/engine/prototypes/battleground/public/assets/tripo-views/desert-eagle/front.png",
+    "right": "/Users/sagarneupane/web-engine/engine/prototypes/battleground/public/assets/tripo-views/desert-eagle/right.png",
+    "back": "/Users/sagarneupane/web-engine/engine/prototypes/battleground/public/assets/tripo-views/desert-eagle/back.png",
+    "left": "/Users/sagarneupane/web-engine/engine/prototypes/battleground/public/assets/tripo-views/desert-eagle/left.png"
+  },
+  "cost_usd": 0.1561107,
+  "created": "2026-09-07T20:11:49.160Z"
+}
